@@ -22,7 +22,7 @@ class TextReplacerSettingsWindow(QMainWindow):
         self.config_manager = config_manager # ConfigManager 인스턴스 저장
         # self.initial_rules = initial_rules # 필요하다면 저장, 현재는 load_rules에서 사용
 
-        self.setWindowTitle("Text Replacer Settings")
+        self.setWindowTitle("TextReplacerPAAK")
         # self.setGeometry(100, 100, 600, 400) # 이전 코드 주석 처리
         self.resize(800, 600) # 초기 창 크기 설정 (가로 800, 세로 600)
 
