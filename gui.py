@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, 
     QGroupBox, QFormLayout, QHeaderView, QStatusBar, QMessageBox, 
-    QSystemTrayIcon, QMenu, QAction, QStyle # <<< QStyle 추가
+    QSystemTrayIcon, QMenu, QAction, QStyle, QCheckBox # <<< QCheckBox 추가
 )
 from PyQt5.QtCore import Qt, QSize # <<< QSize 추가
 from PyQt5.QtGui import QIcon # <<< 추가
@@ -18,11 +18,12 @@ if TYPE_CHECKING:
 class TextReplacerSettingsWindow(QMainWindow):
     """텍스트 치환 설정 GUI 메인 윈도우 클래스"""
     # def __init__(self): # 이전 시그니처
-    def __init__(self, keyboard_listener: 'KeyboardListener', config_manager: 'ConfigManager', initial_rules: Dict[str, str]): 
+    def __init__(self, keyboard_listener: 'KeyboardListener', config_manager: 'ConfigManager', initial_rules: Dict[str, str], start_on_boot_setting: bool): 
         super().__init__()
         self.listener = keyboard_listener # 리스너 인스턴스 저장
         self.config_manager = config_manager # ConfigManager 인스턴스 저장
         self.rules_changed_since_last_save = False # <<< 변경 감지 플래그 추가
+        self.start_on_boot_setting = start_on_boot_setting # <<< 초기 설정값 저장
 
         self.setWindowTitle("TextReplacerPAAK")
         # self.setGeometry(100, 100, 600, 400) # 이전 코드 주석 처리
@@ -120,23 +121,31 @@ class TextReplacerSettingsWindow(QMainWindow):
         self.main_layout.addWidget(group_box)
 
     def _create_status_bar(self):
-        """상태 표시줄 생성 및 피드백 버튼 추가"""
+        """상태 표시줄 생성 및 부가 기능 위젯 추가"""
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
         
-        # 기본 상태 메시지 레이블
+        # 기본 상태 메시지 레이블 (왼쪽)
         self.status_label = QLabel("Ready")
         self.statusBar.addWidget(self.status_label)
 
-        # 선택된 규칙 표시 레이블 (영구 위젯 영역의 왼쪽에 추가)
+        # 선택된 규칙 표시 레이블 (왼쪽, 상태 메시지 다음)
         self.selected_rule_label = QLabel("")
-        self.statusBar.addPermanentWidget(self.selected_rule_label)
+        self.statusBar.addWidget(self.selected_rule_label) 
+        
+        # 오른쪽 정렬될 위젯들
+        # <<< Start on Boot 체크박스 생성 >>>
+        self.start_on_boot_checkbox = QCheckBox("Start on Boot")
+        self.start_on_boot_checkbox.setToolTip("Run TextReplacerPAAK when Windows starts")
+        self.start_on_boot_checkbox.setChecked(self.start_on_boot_setting) # 초기 상태 설정
+        self.start_on_boot_checkbox.stateChanged.connect(self._on_start_on_boot_changed)
+        self.statusBar.addPermanentWidget(self.start_on_boot_checkbox) # <<< 오른쪽에 추가
+        logging.debug("Start on Boot checkbox added to status bar.")
 
-        # <<< 피드백 버튼 추가 >>>
-        self.feedback_button = QPushButton("💬") # 말풍선 이모지
+        # <<< 피드백 버튼 생성 >>>
+        self.feedback_button = QPushButton("💬") 
         self.feedback_button.setToolTip("Send Feedback")
-        self.feedback_button.setFixedSize(QSize(24, 24)) # 작은 크기로 고정
-        # 버튼 스타일 조정 (테두리 없애기 등)
+        self.feedback_button.setFixedSize(QSize(24, 24)) 
         self.feedback_button.setStyleSheet("""
             QPushButton {
                 border: none;
@@ -149,18 +158,15 @@ class TextReplacerSettingsWindow(QMainWindow):
                 /* background-color: lightgray; */ 
             }
         """)
-        self.feedback_button.setCursor(Qt.PointingHandCursor) # 마우스 커서 변경
-        self.feedback_button.clicked.connect(self._open_feedback) # 시그널 연결
-        
-        # 상태 표시줄 가장 오른쪽에 피드백 버튼 추가
-        self.statusBar.addPermanentWidget(self.feedback_button)
+        self.feedback_button.setCursor(Qt.PointingHandCursor) 
+        self.feedback_button.clicked.connect(self._open_feedback) 
+        self.statusBar.addPermanentWidget(self.feedback_button) # <<< 오른쪽에 추가 (체크박스 다음)
         logging.debug("Feedback button added to status bar.")
-        # <<< 피드백 버튼 추가 끝 >>>
 
     def _create_tray_icon(self):
         """시스템 트레이 아이콘 및 메뉴 생성"""
         self.tray_icon = QSystemTrayIcon(self.app_icon, self) # 아이콘 설정
-        self.tray_icon.setToolTip("TextReplacerPAAK") # 툴팁 설정
+        self.tray_icon.setToolTip("TextReplacerPAAK") # 툴큐 설정
 
         # 트레이 메뉴 생성
         tray_menu = QMenu()
@@ -440,6 +446,38 @@ class TextReplacerSettingsWindow(QMainWindow):
         # 나중에 여기에 webbrowser.open('your_feedback_url') 추가
         QMessageBox.information(self, "Feedback", "Feedback functionality is not yet implemented.")
 
+    # <<< Start on Boot 체크박스 슬롯 추가 >>>
+    def _on_start_on_boot_changed(self, state):
+        """'Start on Boot' 체크박스 상태 변경 시 호출됩니다."""
+        is_checked = (state == Qt.Checked)
+        logging.info(f"'Start on Boot' checkbox state changed to: {is_checked}")
+        
+        # 설정 파일 업데이트
+        config = self.config_manager.load_config()
+        if "settings" not in config:
+            config["settings"] = {} # settings 키가 없으면 생성
+        config["settings"]["start_on_boot"] = is_checked
+        
+        save_success = self.config_manager.save_config(config)
+        
+        if save_success:
+            logging.info(f"'start_on_boot' setting saved as {is_checked}.")
+            # TODO: 실제 Windows 시작 프로그램 등록/해제 로직 호출
+            # 예: update_startup_registry(is_checked)
+            # 성공/실패 여부에 따라 사용자에게 피드백 표시 가능
+            self.statusBar.showMessage(f"Start on boot setting {'enabled' if is_checked else 'disabled'}.", 3000)
+        else:
+             logging.error("Failed to save 'start_on_boot' setting.")
+             # 오류 발생 시 사용자에게 알림 (QMessageBox 등)
+             QMessageBox.critical(self, "Error", "Failed to save the 'Start on Boot' setting.")
+             # 체크박스 상태를 이전으로 되돌릴 수 있음 (선택적)
+             # self.start_on_boot_checkbox.blockSignals(True) # 시그널 발생 방지
+             # self.start_on_boot_checkbox.setChecked(not is_checked)
+             # self.start_on_boot_checkbox.blockSignals(False)
+             
+        # 내부 상태 변수 업데이트 (필요시)
+        self.start_on_boot_setting = is_checked
+
 if __name__ == '__main__':
     # 이 파일 단독 실행 시 GUI 테스트용
     app = QApplication(sys.argv)
@@ -448,7 +486,7 @@ if __name__ == '__main__':
     # 테스트를 위한 Mock 객체 또는 실제 객체 생성 필요
     class MockListener: rules = {"!t1": "test1", "!t2": "test2"}; is_running=lambda:True; update_rules=lambda x: print("Mock update:", x); stop=lambda: print("Mock listener stopped")
     class MockConfigManager: save_rules=lambda x: print("Mock save:", x); load_rules=lambda: {}
-    window = TextReplacerSettingsWindow(MockListener(), MockConfigManager(), {"!t1": "test1", "!t2": "test2"})
+    window = TextReplacerSettingsWindow(MockListener(), MockConfigManager(), {"!t1": "test1", "!t2": "test2"}, False)
     # window.show() # <<< 시작 시 창 표시 안 함
     
     sys.exit(app.exec_())
@@ -464,7 +502,7 @@ if __name__ == '__main__':
     # 테스트를 위한 Mock 객체 또는 실제 객체 생성 필요
     class MockListener: rules = {"!t1": "test1", "!t2": "test2"}; is_running=lambda:True; update_rules=lambda x: print("Mock update:", x); stop=lambda: print("Mock listener stopped")
     class MockConfigManager: save_rules=lambda x: print("Mock save:", x); load_rules=lambda: {}
-    window = TextReplacerSettingsWindow(MockListener(), MockConfigManager(), {"!t1": "test1", "!t2": "test2"})
+    window = TextReplacerSettingsWindow(MockListener(), MockConfigManager(), {"!t1": "test1", "!t2": "test2"}, False)
     # window.show() # <<< 시작 시 창 표시 안 함
     
     sys.exit(app.exec_()) 

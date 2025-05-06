@@ -19,23 +19,30 @@ if __name__ == '__main__':
     # 마지막 창이 닫혀도 앱이 종료되지 않도록 설정
     app.setQuitOnLastWindowClosed(False) 
 
-    # ConfigManager 인스턴스 생성 및 규칙 로드 (인자 없이 호출)
+    # ConfigManager 인스턴스 생성 및 전체 설정 로드
     config_manager = ConfigManager()
-    initial_rules = config_manager.load_rules()
-    # 경로 로깅 추가 (config_manager에서 결정된 경로 확인용)
+    config = config_manager.load_config()
+    initial_rules = config.get("rules", {}) # rules 키가 없으면 빈 딕셔너리
+    initial_settings = config.get("settings", {}) # settings 키가 없으면 빈 딕셔너리
+    start_on_boot_setting = initial_settings.get("start_on_boot", False) # start_on_boot 없으면 False
+    
     logging.info(f"Using config file: {config_manager.config_file_path}")
-    logging.info(f"Loaded {len(initial_rules)} rules at startup.") # 경로 정보는 위 로그에 포함
+    logging.info(f"Loaded {len(initial_rules)} rules and settings (Start on boot: {start_on_boot_setting}) at startup.")
+    
+    # TODO: 로드된 start_on_boot_setting 값에 따라 실제 시작 프로그램 등록/해제 로직 수행
+    # (예: update_startup_registry(start_on_boot_setting))
 
     # KeyboardListener 인스턴스 생성 시 로드된 규칙 전달
     kb_listener = KeyboardListener(rules=initial_rules)
     kb_listener.start()
     logging.info("Keyboard listener started from main with loaded rules.")
 
-    # GUI 윈도우 생성 (시작 시 숨겨진 상태)
+    # GUI 윈도우 생성 (시작 시 숨겨진 상태 -> 활성화됨)
     window = TextReplacerSettingsWindow(
         keyboard_listener=kb_listener, 
         config_manager=config_manager, 
-        initial_rules=initial_rules
+        initial_rules=initial_rules,
+        start_on_boot_setting=start_on_boot_setting # <<< 시작 설정값 전달
     )
     window.show() # <<< 시작 시 창을 보여주도록 변경
 
