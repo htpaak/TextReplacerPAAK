@@ -8,16 +8,20 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 
 # keyboard_listener 모듈 임포트 (타입 힌트용)
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict
 if TYPE_CHECKING:
     from keyboard_listener import KeyboardListener 
+    from config_manager import ConfigManager
 
 class TextReplacerSettingsWindow(QMainWindow):
     """텍스트 치환 설정 GUI 메인 윈도우 클래스"""
     # def __init__(self): # 이전 시그니처
-    def __init__(self, keyboard_listener: 'KeyboardListener'): # 리스너 인자 추가
+    def __init__(self, keyboard_listener: 'KeyboardListener', config_manager: 'ConfigManager', initial_rules: Dict[str, str]): 
         super().__init__()
         self.listener = keyboard_listener # 리스너 인스턴스 저장
+        self.config_manager = config_manager # ConfigManager 인스턴스 저장
+        # self.initial_rules = initial_rules # 필요하다면 저장, 현재는 load_rules에서 사용
+
         self.setWindowTitle("Text Replacer Settings")
         # self.setGeometry(100, 100, 600, 400) # 이전 코드 주석 처리
         self.resize(800, 600) # 초기 창 크기 설정 (가로 800, 세로 600)
@@ -32,23 +36,31 @@ class TextReplacerSettingsWindow(QMainWindow):
         self._create_management_buttons()
         self._create_status_bar()
 
+        # 초기 규칙 로드 (리스너 대신 main에서 전달받은 initial_rules 사용)
+        self._load_rules_into_table(initial_rules) 
+
         self._connect_signals()
-        self._load_rules_from_listener() # 초기 규칙 로드
-        self._update_status_bar() # 초기 상태 업데이트
-        self._on_rule_selected() # 초기 버튼 상태 설정
+        self._update_status_bar() # 리스너 상태 표시
+        self._on_rule_selection_changed() # 초기 버튼 상태 설정
 
     def _create_add_rule_group(self):
         """새 규칙 추가 섹션 생성"""
-        group_box = QGroupBox("Add New Rule")
+        group_box = QGroupBox("Add/Edit Rule")
         layout = QFormLayout()
 
         self.keyword_input = QLineEdit()
-        self.replace_input = QLineEdit()
+        self.replacement_input = QLineEdit()
         self.add_button = QPushButton("Add Rule")
+        self.edit_button = QPushButton("Update Rule") # 이름 변경 및 초기 비활성화
+        self.edit_button.setEnabled(False)
 
-        layout.addRow("Keyword:", self.keyword_input)
-        layout.addRow("Replace:", self.replace_input)
-        layout.addWidget(self.add_button) # Add button below inputs
+        layout.addRow(QLabel("Keyword:"), self.keyword_input)
+        layout.addRow(QLabel("Replacement Text:"), self.replacement_input)
+        
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(self.add_button)
+        button_layout.addWidget(self.edit_button)
+        layout.addRow(button_layout)
 
         group_box.setLayout(layout)
         self.main_layout.addWidget(group_box)
@@ -60,186 +72,237 @@ class TextReplacerSettingsWindow(QMainWindow):
 
         self.rules_table = QTableWidget()
         self.rules_table.setColumnCount(2)
-        self.rules_table.setHorizontalHeaderLabels(["Keyword", "Replace Text"])
-        self.rules_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.rules_table.setSelectionBehavior(QTableWidget.SelectRows) # 행 전체 선택
-        self.rules_table.setSelectionMode(QTableWidget.SingleSelection) # 단일 행 선택
-        self.rules_table.setEditTriggers(QTableWidget.NoEditTriggers) # 직접 수정 금지
-        # self._add_sample_rules() # 샘플 데이터 추가 대신 리스너에서 로드
+        self.rules_table.setHorizontalHeaderLabels(["Keyword", "Replacement Text"])
+        self.rules_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.rules_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.rules_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.rules_table.setEditTriggers(QTableWidget.NoEditTriggers) # 직접 수정 불가
 
         layout.addWidget(self.rules_table)
         group_box.setLayout(layout)
         self.main_layout.addWidget(group_box)
 
-    def _load_rules_from_listener(self):
-        """KeyboardListener에서 규칙을 가져와 테이블 위젯에 로드"""
-        logging.debug("Loading rules into GUI table.")
-        self.rules_table.setRowCount(0) # 테이블 초기화
-        if self.listener and self.listener.rules:
-            rules = self.listener.rules
-            self.rules_table.setRowCount(len(rules))
-            # 키워드 순으로 정렬해서 보여주기 (선택 사항)
-            sorted_keywords = sorted(rules.keys())
-            for row, keyword in enumerate(sorted_keywords):
-                replace_text = rules[keyword]
-                self.rules_table.setItem(row, 0, QTableWidgetItem(keyword))
-                self.rules_table.setItem(row, 1, QTableWidgetItem(replace_text))
-            logging.info(f"Loaded {len(rules)} rules into table.")
-        else:
-            logging.warning("Listener or rules not available to load.")
-
     def _create_management_buttons(self):
         """관리 버튼 (편집, 삭제 등) 섹션 생성"""
-        self.selected_rule_label = QLabel("Selected Rule: None")
-        self.main_layout.addWidget(self.selected_rule_label) # Show selected rule above buttons
+        group_box = QGroupBox("Manage")
+        layout = QHBoxLayout()
 
-        button_layout = QHBoxLayout()
-        self.edit_button = QPushButton("Edit")
-        self.delete_button = QPushButton("Delete")
-        self.save_all_button = QPushButton("Save All")
+        self.delete_button = QPushButton("Delete Selected Rule")
+        self.save_all_button = QPushButton("Save All Rules") # 저장 버튼
         self.close_button = QPushButton("Close")
 
-        # 초기에는 비활성화 (규칙 선택 시 활성화되도록 추후 구현)
-        self.edit_button.setEnabled(False) 
-        self.delete_button.setEnabled(False)
+        self.delete_button.setEnabled(False) # 초기 비활성화
 
-        button_layout.addWidget(self.edit_button)
-        button_layout.addWidget(self.delete_button)
-        button_layout.addStretch() # 버튼 사이 공간
-        button_layout.addWidget(self.save_all_button)
-        button_layout.addWidget(self.close_button)
-        
-        self.main_layout.addLayout(button_layout)
+        layout.addWidget(self.delete_button)
+        layout.addStretch()
+        layout.addWidget(self.save_all_button)
+        layout.addWidget(self.close_button)
+
+        group_box.setLayout(layout)
+        self.main_layout.addWidget(group_box)
 
     def _create_status_bar(self):
         """상태 표시줄 생성"""
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
-        # 초기 상태는 _update_status_bar 에서 설정
+        self.status_label = QLabel("Ready")
+        self.statusBar.addWidget(self.status_label)
+        self.selected_rule_label = QLabel("")
+        self.statusBar.addPermanentWidget(self.selected_rule_label)
 
     def _update_status_bar(self):
-        """리스너 상태에 따라 상태 표시줄 업데이트"""
+        """상태 표시줄을 업데이트합니다."""
         if self.listener and self.listener.is_running():
-            self.statusBar.showMessage("Status: Listener Running")
+            status = "Listener Running"
         else:
-            self.statusBar.showMessage("Status: Listener Stopped")
+            status = "Listener Stopped"
+        
+        selected_item = self.rules_table.currentItem()
+        if selected_item:
+            keyword = self.rules_table.item(selected_item.row(), 0).text()
+            self.selected_rule_label.setText(f"Selected: {keyword}")
+        else:
+            self.selected_rule_label.setText("")
+            
+        self.status_label.setText(status)
 
     def _connect_signals(self):
-        """GUI 위젯의 시그널을 슬롯 메서드에 연결"""
+        """위젯 시그널을 슬롯 메서드에 연결합니다."""
         logging.debug("Connecting GUI signals.")
-        self.close_button.clicked.connect(self.close) # Close 버튼 -> 창 닫기
-        self.save_all_button.clicked.connect(self._save_all_rules) # Save All 버튼 -> _save_all_rules 호출
-        # TODO: Add, Edit, Delete 버튼 및 테이블 선택 시그널 연결
-        self.rules_table.itemSelectionChanged.connect(self._on_rule_selected)
+        self.rules_table.itemSelectionChanged.connect(self._on_rule_selection_changed)
         self.add_button.clicked.connect(self._add_rule)
+        self.edit_button.clicked.connect(self._edit_rule) # 수정 버튼 연결
         self.delete_button.clicked.connect(self._delete_rule)
+        self.save_all_button.clicked.connect(self._save_all_rules) # 저장 버튼 연결
+        self.close_button.clicked.connect(self.close)
+        # 키워드 입력 변경 시 버튼 상태 업데이트 등 추가 가능
 
-    def _on_rule_selected(self):
-        """테이블에서 규칙(행) 선택 시 호출될 슬롯"""
+    def _load_rules_into_table(self, rules: Dict[str, str]):
+        """주어진 규칙 딕셔너리를 테이블 위젯에 로드합니다."""
+        self.rules_table.setRowCount(0) # 기존 행 모두 삭제
+        self.rules_table.setRowCount(len(rules))
+        row = 0
+        for keyword, replacement in rules.items():
+            self.rules_table.setItem(row, 0, QTableWidgetItem(keyword))
+            self.rules_table.setItem(row, 1, QTableWidgetItem(replacement))
+            row += 1
+        logging.info(f"Loaded {len(rules)} rules into table.")
+
+    def _on_rule_selection_changed(self):
+        """테이블 선택 변경 시 호출됩니다."""
         selected_items = self.rules_table.selectedItems()
-        if len(selected_items) > 0: # 항목이 선택되었는지 확인 (보통 2개: 키워드, 내용)
+        is_selected = bool(selected_items)
+        
+        self.delete_button.setEnabled(is_selected)
+        self.edit_button.setEnabled(is_selected) # 수정 버튼 활성화/비활성화
+
+        if is_selected:
             selected_row = self.rules_table.currentRow()
-            keyword_item = self.rules_table.item(selected_row, 0)
-            if keyword_item: # 선택된 행의 아이템이 유효한지 확인
-                keyword = keyword_item.text()
-                self.selected_rule_label.setText(f"Selected Rule: {keyword}")
-                self.edit_button.setEnabled(True)
-                self.delete_button.setEnabled(True)
-                logging.debug(f"Rule selected: Row {selected_row}, Keyword '{keyword}'")
-            else: # 행은 선택했지만 아이템이 없는 경우 (이론상 발생 어려움)
-                 self.selected_rule_label.setText("Selected Rule: Invalid selection")
-                 self.edit_button.setEnabled(False)
-                 self.delete_button.setEnabled(False)
-        else: # 아무것도 선택되지 않은 경우
-            self.selected_rule_label.setText("Selected Rule: None")
-            self.edit_button.setEnabled(False)
-            self.delete_button.setEnabled(False)
+            keyword = self.rules_table.item(selected_row, 0).text()
+            replacement = self.rules_table.item(selected_row, 1).text()
+            self.keyword_input.setText(keyword)
+            self.replacement_input.setText(replacement)
+            self.selected_rule_label.setText(f"Selected: {keyword}")
+        else:
+            self.keyword_input.clear()
+            self.replacement_input.clear()
+            self.selected_rule_label.setText("")
             logging.debug("Rule selection cleared.")
             
-    def _add_rule(self):
-        """'Add Rule' 버튼 클릭 시 호출될 슬롯"""
-        keyword = self.keyword_input.text().strip()
-        replace_text = self.replace_input.text().strip() # 앞뒤 공백 제거
+        # 상태 표시줄 업데이트 (선택된 항목 반영)
+        self._update_status_bar()
 
-        # 유효성 검사
-        if not keyword or not replace_text:
-            QMessageBox.warning(self, "Add Rule Error", "Keyword and Replace Text cannot be empty.")
+    def _get_current_rules_from_table(self) -> Dict[str, str]:
+        """현재 테이블 위젯의 모든 규칙을 딕셔너리로 반환합니다."""
+        rules = {}
+        for row in range(self.rules_table.rowCount()):
+            keyword_item = self.rules_table.item(row, 0)
+            replacement_item = self.rules_table.item(row, 1)
+            if keyword_item and replacement_item: # 항목이 실제로 존재하는지 확인
+                rules[keyword_item.text()] = replacement_item.text()
+        return rules
+
+    def _add_rule(self):
+        """새 규칙을 추가합니다."""
+        keyword = self.keyword_input.text().strip()
+        replacement = self.replacement_input.text() # 공백 유지 가능
+
+        if not keyword:
+            QMessageBox.warning(self, "Input Error", "Keyword cannot be empty.")
             return
+
+        # 현재 테이블에서 키워드 중복 확인
+        current_rules = self._get_current_rules_from_table()
+        if keyword in current_rules:
+            QMessageBox.warning(self, "Duplicate Keyword", f"The keyword '{keyword}' already exists.")
+            return
+
+        # 테이블에 행 추가
+        row_count = self.rules_table.rowCount()
+        self.rules_table.insertRow(row_count)
+        self.rules_table.setItem(row_count, 0, QTableWidgetItem(keyword))
+        self.rules_table.setItem(row_count, 1, QTableWidgetItem(replacement))
+        logging.info(f"Rule added to table: '{keyword}' -> '{replacement[:20]}...'")
+
+        # 입력 필드 초기화 및 선택 해제
+        self.keyword_input.clear()
+        self.replacement_input.clear()
+        self.rules_table.clearSelection()
         
-        if keyword in self.listener.rules:
-             QMessageBox.warning(self, "Add Rule Error", f"Keyword '{keyword}' already exists.")
-             return
-             
-        # 리스너 규칙 업데이트
-        self.listener.rules[keyword] = replace_text
-        # TODO: 리스너의 max_buffer_size 업데이트 필요 시 self.listener._calculate_max_buffer_size() 호출 또는 update_rules 사용
-        # 임시방편: 버퍼 크기 강제 업데이트
-        self.listener.max_buffer_size = self.listener._calculate_max_buffer_size()
-        logging.info(f"Rule added to listener: '{keyword}' -> '{replace_text}'. New max buffer size: {self.listener.max_buffer_size}")
+        # 리스너 규칙 업데이트 (저장 버튼 누르기 전에는 반영 안 함 - 선택 사항)
+        # self.listener.update_rules(self._get_current_rules_from_table())
+        
+        # 상태 업데이트 (선택적)
+        self.statusBar.showMessage(f"Rule '{keyword}' added to list. Click 'Save All' to apply.", 3000)
+
+    def _edit_rule(self):
+        """선택된 규칙을 수정합니다."""
+        selected_row = self.rules_table.currentRow()
+        if selected_row < 0:
+            return # 선택된 행 없음
+
+        original_keyword = self.rules_table.item(selected_row, 0).text()
+        new_keyword = self.keyword_input.text().strip()
+        new_replacement = self.replacement_input.text()
+
+        if not new_keyword:
+            QMessageBox.warning(self, "Input Error", "Keyword cannot be empty.")
+            return
+
+        # 현재 테이블에서 키워드 중복 확인 (자기 자신 제외)
+        current_rules = self._get_current_rules_from_table()
+        if new_keyword != original_keyword and new_keyword in current_rules:
+            QMessageBox.warning(self, "Duplicate Keyword", f"The keyword '{new_keyword}' already exists.")
+            return
 
         # 테이블 업데이트
-        # 테이블 업데이트 전에 정렬된 리스트를 다시 로드하여 일관성 유지
-        self._load_rules_from_listener() 
-        # row_count = self.rules_table.rowCount()
-        # self.rules_table.insertRow(row_count)
-        # self.rules_table.setItem(row_count, 0, QTableWidgetItem(keyword))
-        # self.rules_table.setItem(row_count, 1, QTableWidgetItem(replace_text))
-        # logging.info(f"Rule added to GUI table: Row {row_count}")
+        self.rules_table.setItem(selected_row, 0, QTableWidgetItem(new_keyword))
+        self.rules_table.setItem(selected_row, 1, QTableWidgetItem(new_replacement))
+        logging.info(f"Rule updated in table: '{original_keyword}' -> '{new_keyword}' = '{new_replacement[:20]}...'")
 
-        # 입력 필드 초기화
+        # 입력 필드 초기화 및 선택 해제
         self.keyword_input.clear()
-        self.replace_input.clear()
+        self.replacement_input.clear()
+        self.rules_table.clearSelection()
+        
+        # 상태 업데이트
+        self.statusBar.showMessage(f"Rule '{new_keyword}' updated in list. Click 'Save All' to apply.", 3000)
 
     def _delete_rule(self):
-        """'Delete' 버튼 클릭 시 호출될 슬롯"""
-        selected_row = self.rules_table.currentRow()
-        if selected_row < 0: # 선택된 행이 없는 경우
-            logging.warning("Delete button clicked but no row selected.")
+        """선택된 규칙을 삭제합니다."""
+        selected_rows = self.rules_table.selectionModel().selectedRows()
+        if not selected_rows:
             return
+        
+        selected_row = selected_rows[0].row() # SingleSelection 모드이므로 첫 번째 항목 사용
+        keyword = self.rules_table.item(selected_row, 0).text()
 
-        keyword_item = self.rules_table.item(selected_row, 0)
-        if not keyword_item:
-             logging.error(f"Cannot get keyword from selected row {selected_row}.")
-             return
-        keyword = keyword_item.text()
-
-        # 삭제 확인
-        reply = QMessageBox.question(self, 'Delete Rule', 
+        reply = QMessageBox.question(self, 'Confirm Delete', 
                                      f"Are you sure you want to delete the rule for '{keyword}'?",
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
-            logging.info(f"Deleting rule for keyword: '{keyword}'")
-            # 리스너 규칙 업데이트
-            rule_deleted_from_listener = False
-            if keyword in self.listener.rules:
-                del self.listener.rules[keyword]
-                # TODO: 리스너의 max_buffer_size 업데이트 필요 시
-                self.listener.max_buffer_size = self.listener._calculate_max_buffer_size()
-                logging.info(f"Rule deleted from listener. New max buffer size: {self.listener.max_buffer_size}")
-                rule_deleted_from_listener = True
-            else:
-                logging.warning(f"Keyword '{keyword}' not found in listener rules during delete.")
-
-            # 테이블 업데이트
             self.rules_table.removeRow(selected_row)
-            logging.info(f"Row {selected_row} removed from GUI table.")
-
-            # 선택 상태 초기화 (중요: 행 삭제 후 선택 상태가 이상해질 수 있음)
-            self.rules_table.clearSelection() 
-            self._on_rule_selected() # 버튼 상태 등 업데이트
+            logging.info(f"Rule for '{keyword}' removed from table.")
+            
+            # 입력 필드 초기화 및 선택 해제
+            self.keyword_input.clear()
+            self.replacement_input.clear()
+            self.rules_table.clearSelection() # 삭제 후 선택 해제
+            
+            # 리스너 규칙 업데이트 (선택 사항)
+            # self.listener.update_rules(self._get_current_rules_from_table())
+            
+            self.statusBar.showMessage(f"Rule '{keyword}' removed from list. Click 'Save All' to apply changes.", 3000)
 
     def _save_all_rules(self):
-        """'Save All' 버튼 클릭 시 호출될 슬롯 (현재는 플레이스홀더)"""
-        # TODO: 현재 리스너의 규칙(self.listener.rules)을 파일에 저장
-        logging.info("'Save All' button clicked. (Save functionality not implemented yet)")
-        QMessageBox.information(self, "Save Rules", "Save functionality is not yet implemented.")
+        """현재 테이블의 모든 규칙을 파일에 저장하고 리스너를 업데이트합니다."""
+        current_rules = self._get_current_rules_from_table()
+        
+        save_success = self.config_manager.save_rules(current_rules)
+        
+        if save_success:
+            # 리스너에게도 변경된 규칙 알림
+            self.listener.update_rules(current_rules)
+            self.statusBar.showMessage("All rules saved successfully!", 3000)
+            logging.info("All rules saved and listener updated.")
+        else:
+            QMessageBox.critical(self, "Save Error", "Failed to save rules to the file. Check logs for details.")
+            self.statusBar.showMessage("Error saving rules!", 3000)
 
-    # ... (closeEvent 등 필요한 메서드 추가 가능) ...
+    def closeEvent(self, event):
+        """윈도우 닫기 이벤트 처리 (변경 사항 저장 여부 확인 - 선택 사항)""" 
+        # TODO: 테이블 내용과 마지막 저장 상태 비교하여 저장되지 않은 변경사항 있으면 물어보기
+        logging.info("Close button clicked or window closed.")
+        # 현재는 바로 닫힘
+        event.accept() 
 
 if __name__ == '__main__':
     # 이 파일 단독 실행 시 GUI 테스트용
     app = QApplication(sys.argv)
-    window = TextReplacerSettingsWindow()
+    # 테스트를 위한 Mock 객체 또는 실제 객체 생성 필요
+    class MockListener: rules = {"!t1": "test1", "!t2": "test2"}; is_running=lambda:True; update_rules=lambda x: print("Mock update:", x)
+    class MockConfigManager: save_rules=lambda x: print("Mock save:", x); load_rules=lambda: {}
+    window = TextReplacerSettingsWindow(MockListener(), MockConfigManager(), {"!t1": "test1", "!t2": "test2"})
     window.show()
     sys.exit(app.exec_()) 
