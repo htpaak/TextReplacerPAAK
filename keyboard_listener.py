@@ -12,6 +12,7 @@ class KeyboardListener:
         self.listener_thread = None
         self.listener = None
         self._stop_event = threading.Event()
+        self.is_simulating = False # <<< 추가: 시뮬레이션 중인지 나타내는 플래그
         
         # 입력 버퍼 및 규칙 설정
         self.buffer = "" 
@@ -25,7 +26,7 @@ class KeyboardListener:
         # 키 입력 제어를 위한 Controller 인스턴스 생성
         self.controller = Controller()
 
-        logging.info(f"KeyboardListener initialized with {len(self.rules)} rules. Max buffer size: {self.max_buffer_size}")
+        logging.info(f"[INIT] KeyboardListener initialized. Rules: {len(self.rules)}, Max buffer: {self.max_buffer_size}")
 
     def _get_default_rules(self):
         """테스트용 기본 규칙 반환"""
@@ -48,117 +49,184 @@ class KeyboardListener:
         self.rules = new_rules
         self.max_buffer_size = self._calculate_max_buffer_size()
         self.buffer = "" # 규칙 변경 시 버퍼 초기화
-        logging.info(f"Rules updated. New rule count: {len(self.rules)}. Max buffer size: {self.max_buffer_size}")
+        logging.info(f"[UPDATE_RULES] Rules updated. Count: {len(self.rules)}, Max buffer: {self.max_buffer_size}")
 
     def _perform_replacement(self, keyword, replacement_text):
-        """실제 키 입력 시뮬레이션을 통해 텍스트를 치환하는 메서드"""
-        logging.info(f"Performing replacement: deleting '{keyword}', typing '{replacement_text}'")
+        """실제 키 입력 시뮬레이션을 통해 텍스트를 치환하는 메서드 (자기 입력 무시 플래그 추가)"""
+        logging.debug(f"[_PERFORM_REPLACEMENT] <<< ENTER >>> Keyword='{keyword}', Replacement='{replacement_text}'")
+        self.is_simulating = True
+        logging.debug(f"[_PERFORM_REPLACEMENT] Set is_simulating = True")
         try:
-            # 키워드 길이만큼 백스페이스 입력
-            for _ in range(len(keyword)):
-                self.controller.press(keyboard.Key.backspace)
-                self.controller.release(keyboard.Key.backspace)
-                # time.sleep(0.01) # 시스템 반응 속도에 따라 약간의 딜레이 필요할 수 있음
+            # logging.debug(f"[_PERFORM_REPLACEMENT] Starting backspace loop for {len(keyword)} characters.") # 이전 코드 주석 처리
+            # for i in range(len(keyword)):
+            #     logging.debug(f"[_PERFORM_REPLACEMENT] Simulating Backspace #{i+1} (for char '{keyword[len(keyword)-1-i]}') - Pressing...")
+            #     self.controller.press(keyboard.Key.backspace)
+            #     logging.debug(f"[_PERFORM_REPLACEMENT] Simulating Backspace #{i+1} - Releasing...")
+            #     self.controller.release(keyboard.Key.backspace)
+            #     logging.debug(f"[_PERFORM_REPLACEMENT] Simulating Backspace #{i+1} - Done.")
+            #     time.sleep(1) # <<< 딜레이를 1초로 변경하여 테스트
+            # logging.debug(f"[_PERFORM_REPLACEMENT] Backspace loop finished. Typing replacement text...")
+
+            # --- 새로운 방식: Shift + 화살표로 선택 후 삭제 ---
+            logging.debug(f"[_PERFORM_REPLACEMENT] Starting selection using Shift+Left Arrow for {len(keyword)} characters.")
             
-            # 치환 텍스트 입력
+            # Shift 키 누르기
+            self.controller.press(keyboard.Key.shift)
+            logging.debug("[_PERFORM_REPLACEMENT] Pressed Shift.")
+            
+            # 키워드 길이 + 1 만큼 왼쪽 화살표 누르기 (실험적 수정)
+            select_count = len(keyword) + 1
+            logging.debug(f"[_PERFORM_REPLACEMENT] Simulating Left Arrow {select_count} times (keyword_len + 1)...")
+            for i in range(select_count):
+                self.controller.press(keyboard.Key.left)
+                self.controller.release(keyboard.Key.left)
+                logging.debug(f"[_PERFORM_REPLACEMENT] Simulated Left Arrow #{i+1}")
+                time.sleep(0.01) # 키 입력 사이에 아주 짧은 딜레이 추가 (선택적)
+
+            # Shift 키 떼기
+            self.controller.release(keyboard.Key.shift)
+            logging.debug("[_PERFORM_REPLACEMENT] Released Shift.")
+            
+            time.sleep(0.02) # 선택 완료 후 잠시 대기
+
+            # Delete 키 누르기
+            logging.debug("[_PERFORM_REPLACEMENT] Simulating Delete key...")
+            self.controller.press(keyboard.Key.delete)
+            self.controller.release(keyboard.Key.delete)
+            logging.debug("[_PERFORM_REPLACEMENT] Simulated Delete key.")
+            
+            time.sleep(0.02) # 삭제 후 잠시 대기
+            # --- 선택 후 삭제 끝 ---
+
+            logging.debug(f"[_PERFORM_REPLACEMENT] Typing replacement text...") # 기존 코드
             self.controller.type(replacement_text)
-            logging.info("Replacement successful.")
+            logging.debug(f"[_PERFORM_REPLACEMENT] Finished typing replacement text.")
+            logging.info(f"[_PERFORM_REPLACEMENT] Replacement successful for keyword '{keyword}'.")
         except Exception as e:
-            logging.error(f"Error during replacement simulation: {e}", exc_info=True)
+            logging.error(f"[_PERFORM_REPLACEMENT] !!! Error during replacement simulation: {e}", exc_info=True)
+        finally:
+            self.is_simulating = False
+            logging.debug(f"[_PERFORM_REPLACEMENT] Set is_simulating = False in finally block")
+        logging.debug(f"[_PERFORM_REPLACEMENT] <<< EXIT >>>")
 
     def _on_press(self, key):
-        """키가 눌렸을 때 호출될 콜백 함수"""
-        processed = False # 키 처리 여부 플래그
+        """키가 눌렸을 때 호출될 콜백 함수 (자기 입력 무시 로직 추가)"""
+        if self.is_simulating:
+            # 시뮬레이션 중인 키 종류 로깅 (Shift, Left, Delete 등 확인용)
+            logging.debug(f"[_ON_PRESS] Ignoring simulated key press {key} because is_simulating is True.") 
+            return True # 시뮬레이션 중인 키는 무시하고 리스너 계속 실행
+        
+        logging.debug(f"[_ON_PRESS] <<< KEY PRESS DETECTED >>> Key={key}, Current Buffer='{self.buffer}'")
+        processed = False 
+        return_value = True # 기본적으로 True 반환 (리스너 계속 실행)
+
         try:
+            logging.debug(f"[_ON_PRESS] Entering TRY block (checking for char attribute)")
             char = key.char
-            # char가 None이 아닌 경우에만 버퍼에 추가
+            
             if char is not None: 
-                logging.debug(f"Alphanumeric key pressed: {char}")
+                logging.debug(f"[_ON_PRESS] Key has char='{char}'. Appending to buffer.")
+                buffer_before = self.buffer
                 self.buffer += char
                 if len(self.buffer) > self.max_buffer_size:
+                    buffer_trimmed_from = self.buffer[:-self.max_buffer_size]
                     self.buffer = self.buffer[-self.max_buffer_size:]
-                logging.debug(f"Buffer: '{self.buffer}'")
-                processed = True # 처리됨
+                    logging.debug(f"[_ON_PRESS] Buffer limit exceeded. Trimmed '{buffer_trimmed_from}'. New Buffer='{self.buffer}'")
+                else:
+                    logging.debug(f"[_ON_PRESS] Buffer updated: '{buffer_before}' -> '{self.buffer}'")
+                processed = True
             else:
-                 # key.char가 None인 경우 (AttributeError는 발생 안 함)
-                 logging.debug(f"Key pressed with None char: {key}")
-                 # 필요시 버퍼 초기화 등 추가 처리 가능
-                 self.buffer = "" # None 문자 입력 시 버퍼 초기화 (선택적)
-                 processed = True # 처리됨
+                 # char가 None인 특수 키는 여기서 처리하지 않음 (AttributeError로 감)
+                 # 혹시 모를 NoneType 오류 방지용 로깅만 남김
+                 logging.debug(f"[_ON_PRESS] Key has char=None. Key={key}. Possible unhandled case?")
+                 # 필요하다면 여기서도 버퍼 초기화 등 처리 가능
+                 processed = True # None을 처리한 것으로 간주
 
         except AttributeError:
-            # 특수 키 처리
-            logging.debug(f"Special key pressed: {key}")
+            logging.debug(f"[_ON_PRESS] Entering EXCEPT AttributeError block (special key). Key={key}")
+            
             if key in self.trigger_keys:
-                logging.debug(f"Trigger key detected: {key}")
+                logging.debug(f"[_ON_PRESS] ---> Trigger key detected: {key}")
+                logging.debug(f"[_ON_PRESS] Calling _check_for_replacement(). Current Buffer='{self.buffer}'")
                 replaced = self._check_for_replacement() # 치환 시도
+                logging.debug(f"[_ON_PRESS] _check_for_replacement() returned: {replaced}")
+                buffer_before = self.buffer
                 self.buffer = "" # 트리거 입력 시 버퍼 초기화
-                # if replaced: # 치환 발생 시 원래 키(스페이스) 입력 방지 로직 (리스너 중단은 안 함)
-                    # return False # 이 방식은 리스너를 중단시킴
-                    # TODO: 트리거 키 입력 방지 기능은 추후 다른 방식으로 구현 고려
+                logging.debug(f"[_ON_PRESS] Buffer reset due to trigger key: '{buffer_before}' -> '{self.buffer}'")
                 processed = True
             elif key == keyboard.Key.backspace:
+                logging.debug(f"[_ON_PRESS] ---> Backspace key detected.")
+                buffer_before = self.buffer
                 if self.buffer:
                     self.buffer = self.buffer[:-1]
-                    logging.debug(f"Backspace pressed. Buffer: '{self.buffer}'")
+                    logging.debug(f"[_ON_PRESS] Backspace applied. Buffer: '{buffer_before}' -> '{self.buffer}'")
                 else:
-                    logging.debug("Backspace pressed but buffer is empty.")
+                    logging.debug(f"[_ON_PRESS] Backspace pressed but buffer was already empty.")
                 processed = True
             elif key == keyboard.Key.esc:
-                 logging.info("ESC key pressed, stopping listener.")
-                 return False # 리스너 루프 중단 (Listener가 처리)
-            # 다른 알려진 특수키는 일단 무시 (필요시 로직 추가)
-            else:
-                 logging.debug(f"Ignoring known special key: {key}")
-                 # 다른 특수 키 입력 시 버퍼 초기화가 필요하면 아래 주석 해제
-                 # self.buffer = ""
+                 logging.info(f"[_ON_PRESS] ---> ESC key detected. Stopping listener.")
+                 return_value = False # 리스너 루프 중단 신호
                  processed = True # 처리됨
+            # Shift, 화살표, Delete 등 _perform_replacement에서 사용할 키들은 여기서 특별히 처리할 필요 없음
+            # (is_simulating 플래그로 걸러지거나, 일반 사용자 입력으로 들어와도 버퍼에 영향 없음)
+            else:
+                 # 기타 알려진 특수키 (Ctrl, Alt, F1 등)
+                 logging.debug(f"[_ON_PRESS] ---> Ignoring known special key: {key}")
+                 # 특수 키 입력 시 버퍼 초기화 여부 결정 (현재는 초기화 안 함)
+                 # self.buffer = ""
+                 processed = True
         
-        # try, except 블록 어디에도 해당되지 않는 예외적인 키 입력의 경우
-        # (예: pynput이 인식하지 못하는 키) 버퍼를 초기화할 수 있음.
         if not processed:
-            logging.warning(f"Unhandled key press detected: {key}. Clearing buffer.")
+            logging.warning(f"[_ON_PRESS] !!! Unhandled key press type: {key}. Clearing buffer.")
             self.buffer = "" 
 
-        # 리스너는 계속 실행되어야 하므로 True 반환 (ESC 제외)
-        return True
+        logging.debug(f"[_ON_PRESS] <<< EXITING HANDLER >>> Returning: {return_value}")
+        return return_value
 
     def _on_release(self, key):
         """키에서 손을 뗐을 때 호출될 콜백 함수"""
-        # logging.debug(f"Key released: {key}") # 릴리즈 로그는 너무 많을 수 있어 주석 처리
-        # ESC는 press에서 처리하므로 여기서는 특별한 로직 없음
-        # if key == keyboard.Key.esc:
-        #     return False
-        return True # 리스너 계속 실행
+        # 너무 많은 로그를 생성하므로 필요한 경우에만 주석 해제
+        # logging.debug(f"[_ON_RELEASE] Key released: {key}") 
+        return True # 리스너는 계속 실행
 
     def _check_for_replacement(self):
-        """현재 버퍼가 규칙 키워드로 끝나는지 확인하고, 일치 시 실제 치환 수행"""
+        """현재 버퍼가 규칙 키워드로 끝나는지 확인하고, 일치 시 실제 치환 수행 (상세 로그 추가)"""
+        logging.debug(f"[_CHECK_REPLACEMENT] <<< ENTER >>> Checking buffer: '{self.buffer}'")
         if not self.buffer:
+            logging.debug(f"[_CHECK_REPLACEMENT] Buffer is empty. No check needed.")
+            logging.debug(f"[_CHECK_REPLACEMENT] <<< EXIT >>> Returning: False")
             return False
 
-        logging.debug(f"Checking buffer '{self.buffer}' for matching keyword ending.")
-        
         matched_keyword = None
         replacement_text = None
-
+        
+        logging.debug(f"[_CHECK_REPLACEMENT] Iterating through {len(self.rules)} rules...")
         for keyword, text in self.rules.items():
-            if self.buffer.endswith(keyword):
+            logging.debug(f"[_CHECK_REPLACEMENT]   Checking rule: Keyword='{keyword}'")
+            is_match = self.buffer.endswith(keyword)
+            logging.debug(f"[_CHECK_REPLACEMENT]   Does buffer ('{self.buffer}') end with keyword ('{keyword}')? -> {is_match}")
+            if is_match:
                 matched_keyword = keyword
                 replacement_text = text
-                break 
+                logging.info(f"[_CHECK_REPLACEMENT] Match found! Keyword: '{matched_keyword}', Replacement: '{replacement_text}'")
+                break # 첫 번째 일치하는 규칙 사용
+        
+        logging.debug(f"[_CHECK_REPLACEMENT] Iteration finished.")
 
         if matched_keyword:
-            logging.info(f"Keyword match found! Keyword: '{matched_keyword}', Buffer: '{self.buffer}'")
+            logging.debug(f"[_CHECK_REPLACEMENT] Match confirmed. Calling _perform_replacement().")
             self._perform_replacement(matched_keyword, replacement_text) # 실제 치환 함수 호출
-            return True # 치환 성공
+            logging.debug(f"[_CHECK_REPLACEMENT] <<< EXIT >>> Returning: True (Match found and replacement attempted)")
+            return True # 치환 성공 (시도)
         else:
-            logging.debug("No matching keyword found for buffer ending.")
+            logging.debug(f"[_CHECK_REPLACEMENT] No matching keyword found for buffer ending.")
+            logging.debug(f"[_CHECK_REPLACEMENT] <<< EXIT >>> Returning: False (No match)")
             return False # 치환 실패
 
     # --- 리스너 시작/중지 및 실행 로직 (이전과 거의 동일) ---
     def _run_listener(self):
         """리스너를 실행하는 내부 메서드 (별도 스레드에서 실행됨)"""
-        logging.info("Keyboard listener thread starting.")
+        logging.info("[_RUN_LISTENER] Keyboard listener thread starting.")
         try:
             self.listener = keyboard.Listener(
                 on_press=self._on_press,
@@ -168,35 +236,37 @@ class KeyboardListener:
             with self.listener as l:
                 l.join()
         except Exception as e:
-            logging.error(f"Error in listener thread: {e}", exc_info=True)
+            # 오류 발생 시 스레드가 조용히 종료되지 않도록 에러 로깅 강화
+            logging.error(f"[_RUN_LISTENER] !!! UNEXPECTED ERROR in listener thread: {e}", exc_info=True)
         finally:
-            logging.info("Keyboard listener thread finished.")
+            logging.info("[_RUN_LISTENER] Keyboard listener thread finished.")
             self.listener = None # 리스너 객체 확실히 정리
 
     def start(self):
         """키보드 리스너를 별도 스레드에서 시작"""
         if self.listener_thread is not None and self.listener_thread.is_alive():
-            logging.warning("Listener is already running.")
+            logging.warning("[START] Listener is already running.")
             return
 
-        logging.info("Starting keyboard listener...")
+        logging.info("[START] Starting keyboard listener...")
         self._stop_event.clear()
-        self.listener_thread = threading.Thread(target=self._run_listener, daemon=True)
+        self.listener_thread = threading.Thread(target=self._run_listener, daemon=True, name="KeyboardListenerThread")
         self.listener_thread.start()
+        logging.info("[START] Listener thread started.")
 
     def stop(self):
         """키보드 리스너를 중지"""
         if self.listener is None:
-            logging.warning("Listener stop requested, but listener object does not exist (already stopped or failed to start?).")
+            logging.warning("[STOP] Listener stop requested, but listener object does not exist (already stopped or failed to start?).")
             # 스레드가 살아있는지 확인하고 정리 시도
             if self.listener_thread and self.listener_thread.is_alive():
-                 logging.info("Attempting to stop the listener thread directly (might not be clean)...")
+                 logging.info("[STOP] Attempting to stop the listener thread directly (might not be clean)...")
                  # 강제 종료는 위험하므로 여기서는 시도하지 않음
                  pass
             return
 
         if not self._stop_event.is_set(): # 중지 요청이 이미 발생하지 않았는지 확인
-             logging.info("Stopping keyboard listener...")
+             logging.info("[STOP] Stopping keyboard listener...")
              self._stop_event.set()
              try:
                  # Listener.stop()은 Listener 스레드 내에서 호출되어야 안전하게 중단됨
@@ -211,12 +281,12 @@ class KeyboardListener:
                  # 또는 리스너 객체에 직접 stop 호출 (pynput 버전/환경에 따라 동작 다를 수 있음)
                   if self.listener:
                       self.listener.stop() # Listener.stop()이 join()을 해제
-                      logging.debug("Called listener.stop()")
+                      logging.debug("[STOP] Called listener.stop()")
 
              except Exception as e:
-                 logging.error(f"Error during listener stop: {e}", exc_info=True)
+                 logging.error(f"[_STOP] Error during listener stop: {e}", exc_info=True)
         else:
-             logging.warning("Listener stop requested, but already in progress or stopped.")
+             logging.warning("[STOP] Listener stop requested, but already in progress or stopped.")
 
         # 스레드 종료 대기 (선택 사항, 너무 길면 GUI 블록 가능)
         # if self.listener_thread and self.listener_thread.is_alive():
@@ -225,7 +295,7 @@ class KeyboardListener:
         #         logging.warning("Listener thread did not stop within timeout.")
 
         # self.listener = None # _run_listener의 finally 블록에서 처리
-        logging.info("Keyboard listener stop sequence initiated.")
+        logging.info("[STOP] Keyboard listener stop sequence initiated.")
 
     def is_running(self):
         """리스너 스레드가 현재 실행 중인지 확인"""
@@ -233,7 +303,11 @@ class KeyboardListener:
 
 # 테스트용 코드
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(threadName)s] - %(message)s')
+    # 로그 포맷에 스레드 이름 추가, 레벨 DEBUG로 설정
+    log_format = '%(asctime)s - %(levelname)s - [%(threadName)s] - %(filename)s:%(lineno)d - %(message)s'
+    logging.basicConfig(level=logging.DEBUG, format=log_format) 
+    
+    logging.info("Starting listener directly for testing...")
     listener = KeyboardListener()
     listener.start()
     
@@ -245,6 +319,13 @@ if __name__ == '__main__':
                 break
             time.sleep(0.5) 
     except KeyboardInterrupt:
-        print("\nCtrl+C detected, stopping listener...")
+        print("\nCtrl+C detected, requesting listener stop...")
         listener.stop()
-        print("Listener stopped by Ctrl+C.") 
+        if listener.listener_thread and listener.listener_thread.is_alive():
+             logging.debug("Waiting for listener thread to join...")
+             listener.listener_thread.join(timeout=1) 
+             if listener.listener_thread.is_alive():
+                 logging.warning("Listener thread did not stop within timeout!")
+             else:
+                 logging.debug("Listener thread joined successfully.")
+        print("Exiting main thread.") 
