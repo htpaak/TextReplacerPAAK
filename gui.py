@@ -20,7 +20,7 @@ class TextReplacerSettingsWindow(QMainWindow):
         super().__init__()
         self.listener = keyboard_listener # 리스너 인스턴스 저장
         self.config_manager = config_manager # ConfigManager 인스턴스 저장
-        # self.initial_rules = initial_rules # 필요하다면 저장, 현재는 load_rules에서 사용
+        self.rules_changed_since_last_save = False # <<< 변경 감지 플래그 추가
 
         self.setWindowTitle("TextReplacerPAAK")
         # self.setGeometry(100, 100, 600, 400) # 이전 코드 주석 처리
@@ -38,6 +38,7 @@ class TextReplacerSettingsWindow(QMainWindow):
 
         # 초기 규칙 로드 (리스너 대신 main에서 전달받은 initial_rules 사용)
         self._load_rules_into_table(initial_rules) 
+        self.rules_changed_since_last_save = False # 초기 로드 후 플래그 리셋
 
         self._connect_signals()
         self._update_status_bar() # 리스너 상태 표시
@@ -124,6 +125,10 @@ class TextReplacerSettingsWindow(QMainWindow):
         else:
             self.selected_rule_label.setText("")
             
+        # 변경 사항 여부 표시 (선택적)
+        if self.rules_changed_since_last_save:
+            status += " (Unsaved Changes)"
+            
         self.status_label.setText(status)
 
     def _connect_signals(self):
@@ -147,6 +152,7 @@ class TextReplacerSettingsWindow(QMainWindow):
             self.rules_table.setItem(row, 1, QTableWidgetItem(replacement))
             row += 1
         logging.info(f"Loaded {len(rules)} rules into table.")
+        # self.rules_changed_since_last_save = False # 로드 후 플래그 리셋은 __init__에서
 
     def _on_rule_selection_changed(self):
         """테이블 선택 변경 시 호출됩니다."""
@@ -162,11 +168,11 @@ class TextReplacerSettingsWindow(QMainWindow):
             replacement = self.rules_table.item(selected_row, 1).text()
             self.keyword_input.setText(keyword)
             self.replacement_input.setText(replacement)
-            self.selected_rule_label.setText(f"Selected: {keyword}")
+            # self.selected_rule_label.setText(f"Selected: {keyword}") # 상태 표시줄에서 처리
         else:
             self.keyword_input.clear()
             self.replacement_input.clear()
-            self.selected_rule_label.setText("")
+            # self.selected_rule_label.setText("") # 상태 표시줄에서 처리
             logging.debug("Rule selection cleared.")
             
         # 상태 표시줄 업데이트 (선택된 항목 반영)
@@ -203,17 +209,16 @@ class TextReplacerSettingsWindow(QMainWindow):
         self.rules_table.setItem(row_count, 0, QTableWidgetItem(keyword))
         self.rules_table.setItem(row_count, 1, QTableWidgetItem(replacement))
         logging.info(f"Rule added to table: '{keyword}' -> '{replacement[:20]}...'")
+        self.rules_changed_since_last_save = True # <<< 플래그 설정
 
         # 입력 필드 초기화 및 선택 해제
         self.keyword_input.clear()
         self.replacement_input.clear()
         self.rules_table.clearSelection()
         
-        # 리스너 규칙 업데이트 (저장 버튼 누르기 전에는 반영 안 함 - 선택 사항)
-        # self.listener.update_rules(self._get_current_rules_from_table())
-        
         # 상태 업데이트 (선택적)
-        self.statusBar.showMessage(f"Rule '{keyword}' added to list. Click 'Save All' to apply.", 3000)
+        # self.statusBar.showMessage(f"Rule '{keyword}' added to list. Click 'Save All' to apply.", 3000)
+        self._update_status_bar() # 변경 상태 반영
 
     def _edit_rule(self):
         """선택된 규칙을 수정합니다."""
@@ -234,11 +239,18 @@ class TextReplacerSettingsWindow(QMainWindow):
         if new_keyword != original_keyword and new_keyword in current_rules:
             QMessageBox.warning(self, "Duplicate Keyword", f"The keyword '{new_keyword}' already exists.")
             return
-
-        # 테이블 업데이트
-        self.rules_table.setItem(selected_row, 0, QTableWidgetItem(new_keyword))
-        self.rules_table.setItem(selected_row, 1, QTableWidgetItem(new_replacement))
-        logging.info(f"Rule updated in table: '{original_keyword}' -> '{new_keyword}' = '{new_replacement[:20]}...'")
+            
+        # 테이블 업데이트 (변경 확인 후 플래그 설정)
+        keyword_changed = (self.rules_table.item(selected_row, 0).text() != new_keyword)
+        replacement_changed = (self.rules_table.item(selected_row, 1).text() != new_replacement)
+        
+        if keyword_changed or replacement_changed:
+            self.rules_table.setItem(selected_row, 0, QTableWidgetItem(new_keyword))
+            self.rules_table.setItem(selected_row, 1, QTableWidgetItem(new_replacement))
+            logging.info(f"Rule updated in table: '{original_keyword}' -> '{new_keyword}' = '{new_replacement[:20]}...'")
+            self.rules_changed_since_last_save = True # <<< 플래그 설정
+        else:
+            logging.debug("No changes detected for the selected rule.")
 
         # 입력 필드 초기화 및 선택 해제
         self.keyword_input.clear()
@@ -246,7 +258,8 @@ class TextReplacerSettingsWindow(QMainWindow):
         self.rules_table.clearSelection()
         
         # 상태 업데이트
-        self.statusBar.showMessage(f"Rule '{new_keyword}' updated in list. Click 'Save All' to apply.", 3000)
+        # self.statusBar.showMessage(f"Rule '{new_keyword}' updated in list. Click 'Save All' to apply.", 3000)
+        self._update_status_bar() # 변경 상태 반영
 
     def _delete_rule(self):
         """선택된 규칙을 삭제합니다."""
@@ -264,16 +277,16 @@ class TextReplacerSettingsWindow(QMainWindow):
         if reply == QMessageBox.Yes:
             self.rules_table.removeRow(selected_row)
             logging.info(f"Rule for '{keyword}' removed from table.")
+            self.rules_changed_since_last_save = True # <<< 플래그 설정
             
             # 입력 필드 초기화 및 선택 해제
             self.keyword_input.clear()
             self.replacement_input.clear()
             self.rules_table.clearSelection() # 삭제 후 선택 해제
             
-            # 리스너 규칙 업데이트 (선택 사항)
-            # self.listener.update_rules(self._get_current_rules_from_table())
-            
-            self.statusBar.showMessage(f"Rule '{keyword}' removed from list. Click 'Save All' to apply changes.", 3000)
+            # 상태 업데이트
+            # self.statusBar.showMessage(f"Rule '{keyword}' removed from list. Click 'Save All' to apply changes.", 3000)
+            self._update_status_bar() # 변경 상태 반영
 
     def _save_all_rules(self):
         """현재 테이블의 모든 규칙을 파일에 저장하고 리스너를 업데이트합니다."""
@@ -284,18 +297,38 @@ class TextReplacerSettingsWindow(QMainWindow):
         if save_success:
             # 리스너에게도 변경된 규칙 알림
             self.listener.update_rules(current_rules)
+            self.rules_changed_since_last_save = False # <<< 저장 성공 시 플래그 리셋
             self.statusBar.showMessage("All rules saved successfully!", 3000)
             logging.info("All rules saved and listener updated.")
+            self._update_status_bar() # 상태 표시줄 업데이트
+            return True # 저장 성공
         else:
             QMessageBox.critical(self, "Save Error", "Failed to save rules to the file. Check logs for details.")
             self.statusBar.showMessage("Error saving rules!", 3000)
+            self._update_status_bar() # 상태 표시줄 업데이트 (실패 상태 유지)
+            return False # 저장 실패
 
     def closeEvent(self, event):
-        """윈도우 닫기 이벤트 처리 (변경 사항 저장 여부 확인 - 선택 사항)""" 
-        # TODO: 테이블 내용과 마지막 저장 상태 비교하여 저장되지 않은 변경사항 있으면 물어보기
-        logging.info("Close button clicked or window closed.")
-        # 현재는 바로 닫힘
-        event.accept() 
+        """윈도우 닫기 이벤트 처리 (변경 사항 저장 여부 확인)""" 
+        if self.rules_changed_since_last_save:
+            reply = QMessageBox.question(self, 'Unsaved Changes', 
+                                         "There are unsaved changes. Save before closing?",
+                                         QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                                         QMessageBox.Cancel) # 기본값: 취소
+
+            if reply == QMessageBox.Save:
+                save_success = self._save_all_rules() # 저장 시도
+                if save_success:
+                    event.accept() # 저장 성공 시 닫기 수락
+                else:
+                    event.ignore() # 저장 실패 시 닫기 무시
+            elif reply == QMessageBox.Discard:
+                event.accept() # 저장 안 함 선택 시 닫기 수락
+            else: # Cancel 또는 창 닫기 버튼 누름
+                event.ignore() # 닫기 무시
+        else:
+            logging.info("No unsaved changes. Closing window.")
+            event.accept() # 변경 사항 없으면 바로 닫기 수락
 
 if __name__ == '__main__':
     # 이 파일 단독 실행 시 GUI 테스트용
