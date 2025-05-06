@@ -83,13 +83,12 @@ class KeyboardListener:
             logging.debug(f"Special key pressed: {key}")
             if key in self.trigger_keys:
                 logging.debug(f"Trigger key detected: {key}")
-                replaced = self._check_for_replacement()
+                replaced = self._check_for_replacement() # 치환 시도
                 self.buffer = "" # 트리거 입력 시 버퍼 초기화
-                if replaced:
-                    # 치환이 성공했으면, 원래 눌린 트리거 키(스페이스 등)는
-                    # 시스템으로 전달되지 않도록 False를 반환 (suppress)
-                    logging.debug("Replacement occurred, suppressing trigger key.")
-                    return False 
+                # if replaced:
+                    # 치환이 성공했어도 리스너를 멈추지 않도록 아래 코드는 주석 처리 또는 삭제
+                    # logging.debug("Replacement occurred, suppressing trigger key.")
+                    # return False # <- 이 부분이 리스너를 중단시켰음!
             elif key == keyboard.Key.backspace:
                 if self.buffer:
                     self.buffer = self.buffer[:-1]
