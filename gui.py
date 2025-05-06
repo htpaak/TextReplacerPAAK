@@ -413,31 +413,12 @@ class TextReplacerSettingsWindow(QMainWindow):
         self.tray_icon.hide()
         QApplication.quit() # 애플리케이션 종료
 
-    # <<< closeEvent 수정 >>>
     def closeEvent(self, event):
-        """윈도우 닫기 이벤트 처리 (숨기기 및 저장 확인)""" 
-        if self.rules_changed_since_last_save:
-            reply = QMessageBox.question(self, 'Unsaved Changes', 
-                                         "There are unsaved changes. Save before closing?",
-                                         QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
-                                         QMessageBox.Cancel) 
-
-            if reply == QMessageBox.Save:
-                save_success = self._save_all_rules()
-                if save_success:
-                    self.hide() # <<< 저장 성공 시 숨기기
-                    event.ignore() # <<< 실제 닫기 이벤트는 무시 (숨겼으므로)
-                else:
-                    event.ignore() # 저장 실패 시 닫기 무시
-            elif reply == QMessageBox.Discard:
-                self.hide() # <<< 저장 안 함 선택 시 숨기기
-                event.ignore() # <<< 실제 닫기 이벤트는 무시
-            else: # Cancel
-                event.ignore() # 닫기 무시
-        else:
-            logging.info("No unsaved changes. Hiding window.")
-            self.hide() # <<< 변경 사항 없으면 숨기기
-            event.ignore() # <<< 실제 닫기 이벤트는 무시
+        """윈도우 닫기 이벤트 처리 (숨기기)""" 
+        # 변경 사항 저장 여부 묻지 않고 바로 숨김
+        logging.info("Close event triggered. Hiding window without save confirmation.")
+        self.hide()
+        event.ignore() # 실제 닫기 이벤트는 무시 (숨겼으므로)
 
     # <<< 피드백 버튼 슬롯 추가 >>>
     def _open_feedback(self):
