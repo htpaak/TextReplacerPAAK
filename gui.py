@@ -4,9 +4,9 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, 
     QGroupBox, QFormLayout, QHeaderView, QStatusBar, QMessageBox, 
-    QSystemTrayIcon, QMenu, QAction # <<< 추가
+    QSystemTrayIcon, QMenu, QAction, QStyle # <<< QStyle 추가
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSize # <<< QSize 추가
 from PyQt5.QtGui import QIcon # <<< 추가
 
 # keyboard_listener 모듈 임포트 (타입 힌트용)
@@ -50,7 +50,7 @@ class TextReplacerSettingsWindow(QMainWindow):
         self._create_add_rule_group()
         self._create_existing_rules_group()
         self._create_management_buttons()
-        self._create_status_bar()
+        self._create_status_bar() # 상태 표시줄 생성 먼저 호출
         self._create_tray_icon() # <<< 트레이 아이콘 생성
 
         # 초기 규칙 로드 (리스너 대신 main에서 전달받은 initial_rules 사용)
@@ -120,13 +120,42 @@ class TextReplacerSettingsWindow(QMainWindow):
         self.main_layout.addWidget(group_box)
 
     def _create_status_bar(self):
-        """상태 표시줄 생성"""
+        """상태 표시줄 생성 및 피드백 버튼 추가"""
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
+        
+        # 기본 상태 메시지 레이블
         self.status_label = QLabel("Ready")
         self.statusBar.addWidget(self.status_label)
+
+        # 선택된 규칙 표시 레이블 (영구 위젯 영역의 왼쪽에 추가)
         self.selected_rule_label = QLabel("")
         self.statusBar.addPermanentWidget(self.selected_rule_label)
+
+        # <<< 피드백 버튼 추가 >>>
+        self.feedback_button = QPushButton("💬") # 말풍선 이모지
+        self.feedback_button.setToolTip("Send Feedback")
+        self.feedback_button.setFixedSize(QSize(24, 24)) # 작은 크기로 고정
+        # 버튼 스타일 조정 (테두리 없애기 등)
+        self.feedback_button.setStyleSheet("""
+            QPushButton {
+                border: none;
+                background-color: transparent;
+                padding: 0px;
+                font-size: 16px; /* 이모지 크기 조절 */
+            }
+            QPushButton:hover {
+                /* 호버 효과 (선택적) */
+                /* background-color: lightgray; */ 
+            }
+        """)
+        self.feedback_button.setCursor(Qt.PointingHandCursor) # 마우스 커서 변경
+        self.feedback_button.clicked.connect(self._open_feedback) # 시그널 연결
+        
+        # 상태 표시줄 가장 오른쪽에 피드백 버튼 추가
+        self.statusBar.addPermanentWidget(self.feedback_button)
+        logging.debug("Feedback button added to status bar.")
+        # <<< 피드백 버튼 추가 끝 >>>
 
     def _create_tray_icon(self):
         """시스템 트레이 아이콘 및 메뉴 생성"""
@@ -214,11 +243,11 @@ class TextReplacerSettingsWindow(QMainWindow):
             replacement = self.rules_table.item(selected_row, 1).text()
             self.keyword_input.setText(keyword)
             self.replacement_input.setText(replacement)
-            # self.selected_rule_label.setText(f"Selected: {keyword}") # 상태 표시줄에서 처리
+            self.selected_rule_label.setText(f"Selected: {keyword}") # 선택된 규칙 레이블 업데이트
         else:
             self.keyword_input.clear()
             self.replacement_input.clear()
-            # self.selected_rule_label.setText("") # 상태 표시줄에서 처리
+            self.selected_rule_label.setText("") # 선택 해제 시 레이블 비움
             logging.debug("Rule selection cleared.")
             
         # 상태 표시줄 업데이트 (선택된 항목 반영)
@@ -403,6 +432,13 @@ class TextReplacerSettingsWindow(QMainWindow):
             logging.info("No unsaved changes. Hiding window.")
             self.hide() # <<< 변경 사항 없으면 숨기기
             event.ignore() # <<< 실제 닫기 이벤트는 무시
+
+    # <<< 피드백 버튼 슬롯 추가 >>>
+    def _open_feedback(self):
+        """피드백 버튼 클릭 시 호출될 슬롯 (현재는 플레이스홀더)"""
+        logging.info("Feedback button clicked. (Functionality to open URL not implemented yet)")
+        # 나중에 여기에 webbrowser.open('your_feedback_url') 추가
+        QMessageBox.information(self, "Feedback", "Feedback functionality is not yet implemented.")
 
 if __name__ == '__main__':
     # 이 파일 단독 실행 시 GUI 테스트용
