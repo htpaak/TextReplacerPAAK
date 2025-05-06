@@ -68,15 +68,23 @@ class KeyboardListener:
 
     def _on_press(self, key):
         """키가 눌렸을 때 호출될 콜백 함수"""
+        processed = False # 키 처리 여부 플래그
         try:
-            # 일반 문자 키 처리
             char = key.char
-            logging.debug(f"Alphanumeric key pressed: {char}")
-            self.buffer += char
-            # 버퍼 크기 제한
-            if len(self.buffer) > self.max_buffer_size:
-                self.buffer = self.buffer[-self.max_buffer_size:]
-            logging.debug(f"Buffer: '{self.buffer}'")
+            # char가 None이 아닌 경우에만 버퍼에 추가
+            if char is not None: 
+                logging.debug(f"Alphanumeric key pressed: {char}")
+                self.buffer += char
+                if len(self.buffer) > self.max_buffer_size:
+                    self.buffer = self.buffer[-self.max_buffer_size:]
+                logging.debug(f"Buffer: '{self.buffer}'")
+                processed = True # 처리됨
+            else:
+                 # key.char가 None인 경우 (AttributeError는 발생 안 함)
+                 logging.debug(f"Key pressed with None char: {key}")
+                 # 필요시 버퍼 초기화 등 추가 처리 가능
+                 self.buffer = "" # None 문자 입력 시 버퍼 초기화 (선택적)
+                 processed = True # 처리됨
 
         except AttributeError:
             # 특수 키 처리
@@ -85,27 +93,34 @@ class KeyboardListener:
                 logging.debug(f"Trigger key detected: {key}")
                 replaced = self._check_for_replacement() # 치환 시도
                 self.buffer = "" # 트리거 입력 시 버퍼 초기화
-                # if replaced:
-                    # 치환이 성공했어도 리스너를 멈추지 않도록 아래 코드는 주석 처리 또는 삭제
-                    # logging.debug("Replacement occurred, suppressing trigger key.")
-                    # return False # <- 이 부분이 리스너를 중단시켰음!
+                # if replaced: # 치환 발생 시 원래 키(스페이스) 입력 방지 로직 (리스너 중단은 안 함)
+                    # return False # 이 방식은 리스너를 중단시킴
+                    # TODO: 트리거 키 입력 방지 기능은 추후 다른 방식으로 구현 고려
+                processed = True
             elif key == keyboard.Key.backspace:
                 if self.buffer:
                     self.buffer = self.buffer[:-1]
                     logging.debug(f"Backspace pressed. Buffer: '{self.buffer}'")
                 else:
                     logging.debug("Backspace pressed but buffer is empty.")
+                processed = True
             elif key == keyboard.Key.esc:
                  logging.info("ESC key pressed, stopping listener.")
-                 self.stop()
-                 return False # 리스너 루프 중단
+                 return False # 리스너 루프 중단 (Listener가 처리)
+            # 다른 알려진 특수키는 일단 무시 (필요시 로직 추가)
             else:
-                # 다른 특수키 (Shift, Ctrl, Alt, 화살표 등)는 버퍼 초기화 또는 무시
-                # 여기서는 일단 버퍼를 초기화 (예: !email 입력 중 Shift 누르면 초기화)
-                # 원치 않으면 이 부분을 주석처리하거나 로직 변경
-                # logging.debug(f"Non-trigger special key pressed. Clearing buffer.")
-                # self.buffer = ""
-                pass # 다른 특수키는 일단 버퍼에 영향 주지 않음
+                 logging.debug(f"Ignoring known special key: {key}")
+                 # 다른 특수 키 입력 시 버퍼 초기화가 필요하면 아래 주석 해제
+                 # self.buffer = ""
+                 processed = True # 처리됨
+        
+        # try, except 블록 어디에도 해당되지 않는 예외적인 키 입력의 경우
+        # (예: pynput이 인식하지 못하는 키) 버퍼를 초기화할 수 있음.
+        if not processed:
+            logging.warning(f"Unhandled key press detected: {key}. Clearing buffer.")
+            self.buffer = "" 
+
+        # 리스너는 계속 실행되어야 하므로 True 반환 (ESC 제외)
         return True
 
     def _on_release(self, key):
