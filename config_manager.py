@@ -108,6 +108,21 @@ class ConfigManager:
             logging.error(f"Error saving config to '{self.config_file_path}': {e}", exc_info=True)
             return False
 
+    def save_rules(self, rules_data: dict):
+        """
+        주어진 규칙 데이터를 설정 파일에 저장합니다.
+        기존 설정(settings)은 유지됩니다.
+
+        Args:
+            rules_data (dict): 저장할 규칙 데이터.
+
+        Returns:
+            bool: 저장 성공 여부.
+        """
+        current_config = self.load_config() # 기존 전체 설정 로드
+        current_config["rules"] = rules_data # rules 부분만 업데이트
+        return self.save_config(current_config) # 전체 설정 저장
+
 if __name__ == '__main__':
     # 테스트용 코드
     logging.basicConfig(level=logging.DEBUG)
