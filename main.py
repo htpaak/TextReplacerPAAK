@@ -16,6 +16,8 @@ if __name__ == '__main__':
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling) 
     
     app = QApplication(sys.argv)
+    # 마지막 창이 닫혀도 앱이 종료되지 않도록 설정
+    app.setQuitOnLastWindowClosed(False) 
 
     # ConfigManager 인스턴스 생성 및 규칙 로드 (인자 없이 호출)
     config_manager = ConfigManager()
@@ -29,19 +31,21 @@ if __name__ == '__main__':
     kb_listener.start()
     logging.info("Keyboard listener started from main with loaded rules.")
 
-    # GUI 윈도우 생성 시 리스너 인스턴스와 ConfigManager 인스턴스, 로드된 규칙 전달
+    # GUI 윈도우 생성 (시작 시 숨겨진 상태)
     window = TextReplacerSettingsWindow(
         keyboard_listener=kb_listener, 
         config_manager=config_manager, 
         initial_rules=initial_rules
     )
-    window.show()
+    window.show() # <<< 시작 시 창을 보여주도록 변경
 
-    # 애플리케이션 종료 시 리스너 정리 (선택적, 데몬 스레드이므로 자동 종료되지만 명시적 중지 가능)ㅂㅈㄷㄱ11!!
-    # app.aboutToQuit.connect(kb_listener.stop) 
-
+    # 애플리케이션 이벤트 루프 시작
     exit_code = app.exec_()
-    logging.info("Application exiting...")
-    # 명시적으로 리스너를 중지하려면 여기서 호출할 수도 있습니다.
-    # kb_listener.stop() # 이미 데몬 스레드라 필요 없을 수 있음
+    logging.info("Application event loop finished.") # 종료 로그 메시지 변경
+    
+    # 애플리케이션 종료 전 리스너 명시적 중지 (quit_app에서 이미 호출하지만 안전하게 한번 더)
+    if kb_listener and kb_listener.is_running():
+        logging.info("Stopping keyboard listener before exiting...")
+        kb_listener.stop()
+        
     sys.exit(exit_code)

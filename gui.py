@@ -3,9 +3,11 @@ import logging # logging 추가
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, 
-    QGroupBox, QFormLayout, QHeaderView, QStatusBar, QMessageBox # QMessageBox 추가
+    QGroupBox, QFormLayout, QHeaderView, QStatusBar, QMessageBox, 
+    QSystemTrayIcon, QMenu, QAction # <<< 추가
 )
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon # <<< 추가
 
 # keyboard_listener 모듈 임포트 (타입 힌트용)
 from typing import TYPE_CHECKING, Dict
@@ -26,6 +28,20 @@ class TextReplacerSettingsWindow(QMainWindow):
         # self.setGeometry(100, 100, 600, 400) # 이전 코드 주석 처리
         self.resize(800, 600) # 초기 창 크기 설정 (가로 800, 세로 600)
 
+        # --- 아이콘 설정 --- 
+        # TODO: 'icon.png' 또는 'icon.ico' 파일을 프로젝트에 추가하고 경로 지정
+        icon_path = "icon.png"  # 아이콘 파일 경로 (없으면 아래 표준 아이콘 사용)
+        if QIcon.hasThemeIcon("document-edit"):
+            self.app_icon = QIcon.fromTheme("document-edit") # 테마 아이콘 시도
+        elif os.path.exists(icon_path):
+             self.app_icon = QIcon(icon_path)
+        else:
+            # 표준 아이콘 사용 (예: SP_DesktopIcon)
+            self.app_icon = self.style().standardIcon(QStyle.SP_DesktopIcon)
+            logging.warning(f"Custom icon '{icon_path}' not found and no theme icon available. Using standard icon.")
+        self.setWindowIcon(self.app_icon) # 창 아이콘 설정
+        # --- 아이콘 설정 끝 ---
+
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         
@@ -35,6 +51,7 @@ class TextReplacerSettingsWindow(QMainWindow):
         self._create_existing_rules_group()
         self._create_management_buttons()
         self._create_status_bar()
+        self._create_tray_icon() # <<< 트레이 아이콘 생성
 
         # 초기 규칙 로드 (리스너 대신 main에서 전달받은 initial_rules 사용)
         self._load_rules_into_table(initial_rules) 
@@ -90,7 +107,7 @@ class TextReplacerSettingsWindow(QMainWindow):
 
         self.delete_button = QPushButton("Delete Selected Rule")
         self.save_all_button = QPushButton("Save All Rules") # 저장 버튼
-        self.close_button = QPushButton("Close")
+        self.close_button = QPushButton("Hide Window") # <<< 버튼 텍스트 변경
 
         self.delete_button.setEnabled(False) # 초기 비활성화
 
@@ -110,6 +127,34 @@ class TextReplacerSettingsWindow(QMainWindow):
         self.statusBar.addWidget(self.status_label)
         self.selected_rule_label = QLabel("")
         self.statusBar.addPermanentWidget(self.selected_rule_label)
+
+    def _create_tray_icon(self):
+        """시스템 트레이 아이콘 및 메뉴 생성"""
+        self.tray_icon = QSystemTrayIcon(self.app_icon, self) # 아이콘 설정
+        self.tray_icon.setToolTip("TextReplacerPAAK") # 툴팁 설정
+
+        # 트레이 메뉴 생성
+        tray_menu = QMenu()
+        show_action = QAction("Settings", self)
+        quit_action = QAction("Exit", self)
+
+        show_action.triggered.connect(self.show_window) # 설정 메뉴 연결
+        quit_action.triggered.connect(self.quit_app)   # 종료 메뉴 연결
+
+        tray_menu.addAction(show_action)
+        tray_menu.addSeparator()
+        tray_menu.addAction(quit_action)
+
+        self.tray_icon.setContextMenu(tray_menu) # 메뉴 연결
+        
+        # 트레이 아이콘 클릭 시 동작 연결 (예: 왼쪽 버튼 클릭)
+        self.tray_icon.activated.connect(self._on_tray_icon_activated)
+        
+        self.tray_icon.show() # 트레이 아이콘 표시
+        logging.info("System tray icon created and shown.")
+        
+        # 첫 실행 시 간단한 메시지 표시 (선택적)
+        # self.tray_icon.showMessage("TextReplacerPAAK", "Application started.", self.app_icon, 2000)
 
     def _update_status_bar(self):
         """상태 표시줄을 업데이트합니다."""
@@ -139,8 +184,9 @@ class TextReplacerSettingsWindow(QMainWindow):
         self.edit_button.clicked.connect(self._edit_rule) # 수정 버튼 연결
         self.delete_button.clicked.connect(self._delete_rule)
         self.save_all_button.clicked.connect(self._save_all_rules) # 저장 버튼 연결
-        self.close_button.clicked.connect(self.close)
+        self.close_button.clicked.connect(self.hide) # <<< Hide Window 버튼 -> 창 숨기기
         # 키워드 입력 변경 시 버튼 상태 업데이트 등 추가 가능
+        # self.tray_icon.activated 시그널은 _create_tray_icon 에서 연결
 
     def _load_rules_into_table(self, rules: Dict[str, str]):
         """주어진 규칙 딕셔너리를 테이블 위젯에 로드합니다."""
@@ -308,34 +354,81 @@ class TextReplacerSettingsWindow(QMainWindow):
             self._update_status_bar() # 상태 표시줄 업데이트 (실패 상태 유지)
             return False # 저장 실패
 
+    # <<< 트레이 아이콘 관련 슬롯 추가 >>>
+    def _on_tray_icon_activated(self, reason):
+        """트레이 아이콘 활성화 시 호출 (예: 클릭)"""
+        # 더블클릭 또는 클릭 시 창 표시
+        if reason == QSystemTrayIcon.Trigger or reason == QSystemTrayIcon.DoubleClick:
+            self.show_window()
+            
+    def show_window(self):
+        """설정 창을 보여주고 활성화합니다."""
+        if self.isHidden() or self.isMinimized():
+            self.showNormal() # 최소화/숨김 상태면 보통 크기로 표시
+        self.raise_() # 다른 창 위로 올림
+        self.activateWindow() # 창 활성화
+        logging.debug("Settings window shown from tray request.")
+        
+    def quit_app(self):
+        """애플리케이션을 완전히 종료합니다."""
+        logging.info("Quit action triggered from tray menu. Stopping listener and quitting application.")
+        if self.listener:
+            self.listener.stop() # 리스너 먼저 중지
+        # 트레이 아이콘 숨기기 (종료 전에 깔끔하게)
+        self.tray_icon.hide()
+        QApplication.quit() # 애플리케이션 종료
+
+    # <<< closeEvent 수정 >>>
     def closeEvent(self, event):
-        """윈도우 닫기 이벤트 처리 (변경 사항 저장 여부 확인)""" 
+        """윈도우 닫기 이벤트 처리 (숨기기 및 저장 확인)""" 
         if self.rules_changed_since_last_save:
             reply = QMessageBox.question(self, 'Unsaved Changes', 
                                          "There are unsaved changes. Save before closing?",
                                          QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
-                                         QMessageBox.Cancel) # 기본값: 취소
+                                         QMessageBox.Cancel) 
 
             if reply == QMessageBox.Save:
-                save_success = self._save_all_rules() # 저장 시도
+                save_success = self._save_all_rules()
                 if save_success:
-                    event.accept() # 저장 성공 시 닫기 수락
+                    self.hide() # <<< 저장 성공 시 숨기기
+                    event.ignore() # <<< 실제 닫기 이벤트는 무시 (숨겼으므로)
                 else:
                     event.ignore() # 저장 실패 시 닫기 무시
             elif reply == QMessageBox.Discard:
-                event.accept() # 저장 안 함 선택 시 닫기 수락
-            else: # Cancel 또는 창 닫기 버튼 누름
+                self.hide() # <<< 저장 안 함 선택 시 숨기기
+                event.ignore() # <<< 실제 닫기 이벤트는 무시
+            else: # Cancel
                 event.ignore() # 닫기 무시
         else:
-            logging.info("No unsaved changes. Closing window.")
-            event.accept() # 변경 사항 없으면 바로 닫기 수락
+            logging.info("No unsaved changes. Hiding window.")
+            self.hide() # <<< 변경 사항 없으면 숨기기
+            event.ignore() # <<< 실제 닫기 이벤트는 무시
 
 if __name__ == '__main__':
     # 이 파일 단독 실행 시 GUI 테스트용
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False) # <<< 트레이 앱을 위해 추가
+    
     # 테스트를 위한 Mock 객체 또는 실제 객체 생성 필요
-    class MockListener: rules = {"!t1": "test1", "!t2": "test2"}; is_running=lambda:True; update_rules=lambda x: print("Mock update:", x)
+    class MockListener: rules = {"!t1": "test1", "!t2": "test2"}; is_running=lambda:True; update_rules=lambda x: print("Mock update:", x); stop=lambda: print("Mock listener stopped")
     class MockConfigManager: save_rules=lambda x: print("Mock save:", x); load_rules=lambda: {}
     window = TextReplacerSettingsWindow(MockListener(), MockConfigManager(), {"!t1": "test1", "!t2": "test2"})
-    window.show()
+    # window.show() # <<< 시작 시 창 표시 안 함
+    
+    sys.exit(app.exec_())
+
+import os # 아이콘 경로 확인용
+from PyQt5.QtWidgets import QStyle # 표준 아이콘용
+
+if __name__ == '__main__':
+    # 이 파일 단독 실행 시 GUI 테스트용
+    app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False) # <<< 트레이 앱을 위해 추가
+    
+    # 테스트를 위한 Mock 객체 또는 실제 객체 생성 필요
+    class MockListener: rules = {"!t1": "test1", "!t2": "test2"}; is_running=lambda:True; update_rules=lambda x: print("Mock update:", x); stop=lambda: print("Mock listener stopped")
+    class MockConfigManager: save_rules=lambda x: print("Mock save:", x); load_rules=lambda: {}
+    window = TextReplacerSettingsWindow(MockListener(), MockConfigManager(), {"!t1": "test1", "!t2": "test2"})
+    # window.show() # <<< 시작 시 창 표시 안 함
+    
     sys.exit(app.exec_()) 
