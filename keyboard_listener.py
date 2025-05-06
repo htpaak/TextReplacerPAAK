@@ -1,11 +1,12 @@
 import threading
 import time
 from pynput import keyboard
+from pynput.keyboard import Controller # Controller 임포트
 import logging
 # from collections import deque # deque 대신 간단한 문자열 슬라이싱 사용
 
 class KeyboardListener:
-    """전역 키보드 입력을 감지하고 키워드 매칭을 처리하는 리스너 클래스"""
+    """전역 키보드 입력을 감지하고 키워드 매칭 및 치환을 처리하는 리스너 클래스"""
 
     def __init__(self, rules=None):
         self.listener_thread = None
@@ -21,8 +22,8 @@ class KeyboardListener:
         # 치환 트리거 키 설정 (pynput Key 객체 사용)
         self.trigger_keys = {keyboard.Key.space, keyboard.Key.enter}
 
-        # 키 입력 제어를 위한 Controller 인스턴스 (다음 단계에서 사용)
-        # self.controller = keyboard.Controller()
+        # 키 입력 제어를 위한 Controller 인스턴스 생성
+        self.controller = Controller()
 
         logging.info(f"KeyboardListener initialized with {len(self.rules)} rules. Max buffer size: {self.max_buffer_size}")
 
@@ -49,6 +50,21 @@ class KeyboardListener:
         self.buffer = "" # 규칙 변경 시 버퍼 초기화
         logging.info(f"Rules updated. New rule count: {len(self.rules)}. Max buffer size: {self.max_buffer_size}")
 
+    def _perform_replacement(self, keyword, replacement_text):
+        """실제 키 입력 시뮬레이션을 통해 텍스트를 치환하는 메서드"""
+        logging.info(f"Performing replacement: deleting '{keyword}', typing '{replacement_text}'")
+        try:
+            # 키워드 길이만큼 백스페이스 입력
+            for _ in range(len(keyword)):
+                self.controller.press(keyboard.Key.backspace)
+                self.controller.release(keyboard.Key.backspace)
+                # time.sleep(0.01) # 시스템 반응 속도에 따라 약간의 딜레이 필요할 수 있음
+            
+            # 치환 텍스트 입력
+            self.controller.type(replacement_text)
+            logging.info("Replacement successful.")
+        except Exception as e:
+            logging.error(f"Error during replacement simulation: {e}", exc_info=True)
 
     def _on_press(self, key):
         """키가 눌렸을 때 호출될 콜백 함수"""
@@ -70,9 +86,10 @@ class KeyboardListener:
                 replaced = self._check_for_replacement()
                 self.buffer = "" # 트리거 입력 시 버퍼 초기화
                 if replaced:
-                    # TODO: 실제 치환 로직 (키 입력 시뮬레이션) 추가
-                    # 현재는 트리거 키가 입력되는 것을 막지 않음
-                    pass 
+                    # 치환이 성공했으면, 원래 눌린 트리거 키(스페이스 등)는
+                    # 시스템으로 전달되지 않도록 False를 반환 (suppress)
+                    logging.debug("Replacement occurred, suppressing trigger key.")
+                    return False 
             elif key == keyboard.Key.backspace:
                 if self.buffer:
                     self.buffer = self.buffer[:-1]
@@ -101,33 +118,28 @@ class KeyboardListener:
         return True # 리스너 계속 실행
 
     def _check_for_replacement(self):
-        """현재 버퍼가 규칙 키워드로 끝나는지 확인하고, 일치 시 로그 출력"""
-        if not self.buffer: # 버퍼 비어있으면 체크 안 함
+        """현재 버퍼가 규칙 키워드로 끝나는지 확인하고, 일치 시 실제 치환 수행"""
+        if not self.buffer:
             return False
 
         logging.debug(f"Checking buffer '{self.buffer}' for matching keyword ending.")
         
-        match_found = False
         matched_keyword = None
         replacement_text = None
 
-        # 버퍼의 끝부분이 키워드와 일치하는지 확인
         for keyword, text in self.rules.items():
             if self.buffer.endswith(keyword):
                 matched_keyword = keyword
                 replacement_text = text
-                match_found = True
-                break # 첫 번째 일치하는 규칙 사용
+                break 
 
-        if match_found:
+        if matched_keyword:
             logging.info(f"Keyword match found! Keyword: '{matched_keyword}', Buffer: '{self.buffer}'")
-            print(f"-----> ACTION: Replace '{matched_keyword}' with '{replacement_text}' (simulation) <-----")
-            # 실제 치환 로직 호출 부분 (다음 단계에서 구현)
-            # self._perform_replacement(matched_keyword, replacement_text)
-            return True
+            self._perform_replacement(matched_keyword, replacement_text) # 실제 치환 함수 호출
+            return True # 치환 성공
         else:
             logging.debug("No matching keyword found for buffer ending.")
-            return False
+            return False # 치환 실패
 
     # --- 리스너 시작/중지 및 실행 로직 (이전과 거의 동일) ---
     def _run_listener(self):
