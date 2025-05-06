@@ -19,7 +19,8 @@ if __name__ == '__main__':
     kb_listener.start()
     logging.info("Keyboard listener started from main.")
 
-    window = TextReplacerSettingsWindow()
+    # GUI 윈도우 생성 시 리스너 인스턴스 전달
+    window = TextReplacerSettingsWindow(keyboard_listener=kb_listener) 
     window.show()
 
     # 애플리케이션 종료 시 리스너 정리 (선택적, 데몬 스레드이므로 자동 종료되지만 명시적 중지 가능)ㅂㅈㄷㄱ11!!

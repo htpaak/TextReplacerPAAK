@@ -212,6 +212,9 @@ class KeyboardListener:
         # self.listener = None # _run_listener의 finally 블록에서 처리
         logging.info("Keyboard listener stop sequence initiated.")
 
+    def is_running(self):
+        """리스너 스레드가 현재 실행 중인지 확인"""
+        return self.listener_thread is not None and self.listener_thread.is_alive()
 
 # 테스트용 코드
 if __name__ == '__main__':
