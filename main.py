@@ -22,7 +22,7 @@ if __name__ == '__main__':
     window = TextReplacerSettingsWindow()
     window.show()
 
-    # 애플리케이션 종료 시 리스너 정리 (선택적, 데몬 스레드이므로 자동 종료되지만 명시적 중지 가능)
+    # 애플리케이션 종료 시 리스너 정리 (선택적, 데몬 스레드이므로 자동 종료되지만 명시적 중지 가능)ㅂㅈㄷㄱ11!!
     # app.aboutToQuit.connect(kb_listener.stop) 
 
     exit_code = app.exec_()
