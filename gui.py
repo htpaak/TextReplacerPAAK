@@ -31,11 +31,11 @@ class TextReplacerSettingsWindow(QMainWindow):
 
         # --- 아이콘 설정 --- 
         # TODO: 'icon.png' 또는 'icon.ico' 파일을 프로젝트에 추가하고 경로 지정
-        icon_path = "icon.png"  # 아이콘 파일 경로 (없으면 아래 표준 아이콘 사용)
-        if QIcon.hasThemeIcon("document-edit"):
-            self.app_icon = QIcon.fromTheme("document-edit") # 테마 아이콘 시도
-        elif os.path.exists(icon_path):
+        icon_path = "assets/icon.ico"  # 아이콘 파일 경로 (없으면 아래 표준 아이콘 사용)
+        if os.path.exists(icon_path):
              self.app_icon = QIcon(icon_path)
+        elif QIcon.hasThemeIcon("document-edit"):
+            self.app_icon = QIcon.fromTheme("document-edit") # 테마 아이콘 시도
         else:
             # 표준 아이콘 사용 (예: SP_DesktopIcon)
             self.app_icon = self.style().standardIcon(QStyle.SP_DesktopIcon)

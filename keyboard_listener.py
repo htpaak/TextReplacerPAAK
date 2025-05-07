@@ -116,6 +116,25 @@ class KeyboardListener:
             logging.debug(f"[_ON_PRESS] Ignoring simulated key press {key} because is_simulating is True.") 
             return True # 시뮬레이션 중인 키는 무시하고 리스너 계속 실행
         
+        # <<< 로그 추가 시작 >>>
+        try:
+            key_char_val = key.char
+        except AttributeError:
+            key_char_val = 'N/A (AttributeError)' # char 속성 없음
+        except Exception as e:
+            key_char_val = f'N/A (Exception: {e})' # 기타 예외
+
+        try:
+            key_vk_val = key.vk
+        except AttributeError:
+            key_vk_val = 'N/A (AttributeError)' # vk 속성 없음
+        except Exception as e:
+            key_vk_val = f'N/A (Exception: {e})' # 기타 예외
+        
+        # key 객체 자체도 로깅 (repr 형태)
+        logging.info(f"[_ON_PRESS_KEY_EVENT] RawKey={repr(key)}, Key.char='{key_char_val}', VK={key_vk_val}")
+        # <<< 로그 추가 끝 >>>
+
         logging.debug(f"[_ON_PRESS] <<< KEY PRESS DETECTED >>> Key={key}, Current Buffer='{self.buffer}'")
         processed = False 
         return_value = True # 기본적으로 True 반환 (리스너 계속 실행)
