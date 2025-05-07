@@ -21,6 +21,11 @@ if __name__ == '__main__':
     # 마지막 창이 닫혀도 앱이 종료되지 않도록 설정
     app.setQuitOnLastWindowClosed(False) 
 
+    # <<< 시작 시 트레이 모드로 실행할지 결정 >>>
+    start_in_tray_mode = "/tray" in sys.argv
+    logging.info(f"Command line arguments: {sys.argv}")
+    logging.info(f"Start in tray mode evaluated to: {start_in_tray_mode}")
+
     # ConfigManager 인스턴스 생성 및 전체 설정 로드
     config_manager = ConfigManager()
     config = config_manager.load_config()
@@ -46,7 +51,14 @@ if __name__ == '__main__':
         initial_rules=initial_rules,
         start_on_boot_setting=start_on_boot_setting # <<< 시작 설정값 전달
     )
-    window.show() # <<< 시작 시 창을 보여주도록 변경
+    # window.show() # <<< 시작 시 창을 보여주도록 변경 -> 조건부 호출로 변경
+
+    # <<< 트레이 모드 시작 여부에 따라 창 표시 결정 >>>
+    if not start_in_tray_mode:
+        window.show()
+        logging.info("Main window shown normally because start_in_tray_mode is False.")
+    else:
+        logging.info("Starting in tray mode (window.show() not called). Tray icon should be visible from gui.py.")
 
     # 애플리케이션 이벤트 루프 시작
     exit_code = app.exec_()

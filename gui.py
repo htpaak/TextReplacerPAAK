@@ -1,6 +1,7 @@
 import sys
 import logging # logging 추가
 import os # <<< os 임포트 추가
+import winreg # <<< winreg 임포트 추가
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, 
@@ -27,6 +28,8 @@ def resource_path(relative_path):
 
     return os.path.join(base_path, relative_path)
 # +++ resource_path 함수 추가 끝 +++
+
+APP_NAME_FOR_REGISTRY = "TextReplacerPAAK" # 시작 프로그램 등록 시 사용할 앱 이름
 
 class TextReplacerSettingsWindow(QMainWindow):
     """텍스트 치환 설정 GUI 메인 윈도우 클래스"""
@@ -73,6 +76,10 @@ class TextReplacerSettingsWindow(QMainWindow):
         self._connect_signals()
         self._update_status_bar() # 리스너 상태 표시
         self._on_rule_selection_changed() # 초기 버튼 상태 설정
+
+        # <<< 프로그램 시작 시 현재 설정에 맞게 레지스트리 상태 동기화 >>>
+        self._update_startup_registry(self.start_on_boot_setting)
+        logging.info(f"Initial 'Start on Boot' registry status updated to: {self.start_on_boot_setting}")
 
     def _create_add_rule_group(self):
         """새 규칙 추가 섹션 생성"""
@@ -455,21 +462,66 @@ class TextReplacerSettingsWindow(QMainWindow):
         
         if save_success:
             logging.info(f"'start_on_boot' setting saved as {is_checked}.")
-            # TODO: 실제 Windows 시작 프로그램 등록/해제 로직 호출
-            # 예: update_startup_registry(is_checked)
-            # 성공/실패 여부에 따라 사용자에게 피드백 표시 가능
-            self.statusBar.showMessage(f"Start on boot setting {'enabled' if is_checked else 'disabled'}.", 3000)
+            # <<< 실제 Windows 시작 프로그램 등록/해제 로직 호출 >>>
+            if self._update_startup_registry(is_checked):
+                self.statusBar.showMessage(f"Start on boot setting {'enabled' if is_checked else 'disabled'}.", 3000)
+            else:
+                # 레지스트리 업데이트 실패 시 사용자에게 알림 (에러는 _update_startup_registry 내부에서 로깅)
+                QMessageBox.critical(self, "Registry Error", f"Failed to update 'Start on Boot' registry setting. See logs for details.")
+                # 실패 시 체크박스 상태를 이전으로 되돌릴 수 있음 (선택적)
+                self.start_on_boot_checkbox.blockSignals(True)
+                self.start_on_boot_checkbox.setChecked(not is_checked) # 이전 상태로 복원
+                self.start_on_boot_checkbox.blockSignals(False)
+                is_checked = not is_checked # 내부 상태 변수도 원복
         else:
-             logging.error("Failed to save 'start_on_boot' setting.")
+             logging.error("Failed to save 'start_on_boot' setting to config file.")
              # 오류 발생 시 사용자에게 알림 (QMessageBox 등)
-             QMessageBox.critical(self, "Error", "Failed to save the 'Start on Boot' setting.")
-             # 체크박스 상태를 이전으로 되돌릴 수 있음 (선택적)
-             # self.start_on_boot_checkbox.blockSignals(True) # 시그널 발생 방지
-             # self.start_on_boot_checkbox.setChecked(not is_checked)
-             # self.start_on_boot_checkbox.blockSignals(False)
+             QMessageBox.critical(self, "Config Save Error", "Failed to save the 'Start on Boot' setting to the configuration file.")
              
         # 내부 상태 변수 업데이트 (필요시)
         self.start_on_boot_setting = is_checked
+
+    def _update_startup_registry(self, enable: bool) -> bool:
+        """
+        Windows 시작 프로그램 레지스트리를 업데이트합니다.
+        HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run 경로를 사용합니다.
+
+        Args:
+            enable (bool): True이면 시작 프로그램에 등록, False이면 제거합니다.
+        
+        Returns:
+            bool: 작업 성공 여부.
+        """
+        registry_key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        try:
+            # 실행 파일 경로 가져오기 (PyInstaller로 빌드된 경우 포함)
+            # 실행 파일이 따옴표로 묶인 경로로 레지스트리에 저장되어야 공백이 있는 경로도 정상 작동함
+            executable_path = f'"{sys.executable}"'
+
+            if enable:
+                executable_path_with_arg = f'{executable_path} /tray' # <<< 인자 추가
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, registry_key_path, 0, winreg.KEY_WRITE) as key:
+                    winreg.SetValueEx(key, APP_NAME_FOR_REGISTRY, 0, winreg.REG_SZ, executable_path_with_arg)
+                logging.info(f"Application '{APP_NAME_FOR_REGISTRY}' added to startup: {executable_path_with_arg}")
+            else:
+                # 키가 없을 때 오류가 발생하지 않도록 예외 처리 추가
+                try:
+                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, registry_key_path, 0, winreg.KEY_WRITE) as key:
+                        winreg.DeleteValue(key, APP_NAME_FOR_REGISTRY)
+                    logging.info(f"Application '{APP_NAME_FOR_REGISTRY}' removed from startup.")
+                except FileNotFoundError:
+                    logging.info(f"Application '{APP_NAME_FOR_REGISTRY}' was not found in startup. No action needed.")
+                except Exception as e_delete: # 삭제 중 다른 예외
+                    logging.error(f"Error removing '{APP_NAME_FOR_REGISTRY}' from startup: {e_delete}", exc_info=True)
+                    # return False # 삭제 실패 시 false 반환 (선택적, 상황에 따라 다름)
+            return True
+        except PermissionError:
+            logging.error(f"Permission denied while trying to modify startup registry for '{APP_NAME_FOR_REGISTRY}'. Ensure you have the necessary rights or run as administrator if applicable.", exc_info=True)
+            QMessageBox.warning(self, "Permission Denied", "Could not modify Windows startup settings due to insufficient permissions. Please try running the application as an administrator if this issue persists.")
+            return False
+        except Exception as e:
+            logging.error(f"Failed to update startup registry for '{APP_NAME_FOR_REGISTRY}': {e}", exc_info=True)
+            return False
 
 if __name__ == '__main__':
     # 이 파일 단독 실행 시 GUI 테스트용
