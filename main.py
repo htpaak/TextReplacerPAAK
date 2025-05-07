@@ -1,6 +1,7 @@
 import sys
 import logging # logging 임포트 추가
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QIcon # QIcon 임포트 추가
 from PyQt5.QtCore import Qt # Qt 임포트 추가
 from log_setup import setup_logging
 from gui import TextReplacerSettingsWindow # GUI 윈도우 임포트
@@ -16,6 +17,7 @@ if __name__ == '__main__':
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling) 
     
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon('assets/icon.ico')) # 애플리케이션 아이콘 설정
     # 마지막 창이 닫혀도 앱이 종료되지 않도록 설정
     app.setQuitOnLastWindowClosed(False) 
 

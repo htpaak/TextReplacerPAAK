@@ -43,7 +43,7 @@ REM --icon="assets/icon.ico": 실행 파일 아이콘 설정 (경로에 공백�
 REM --add-data "assets;assets": assets 폴더 및 내용 포함 (애플리케이션에 따라 수정/제거)
 REM --exclude-module: 특정 모듈 제외 (테스트 등)
 REM --hidden-import: 누락된 모듈 명시적 포함
-REM --name="MyApplication": 생성될 실행 파일의 이름 지정
+REM --name="TextReplacerPAAK": 생성될 실행 파일의 이름 지정
 REM main.py: 빌드할 메인 파이썬 스크립트
 pyinstaller --noconsole ^
   --onefile ^
@@ -53,7 +53,7 @@ pyinstaller --noconsole ^
   --exclude-module=pytest ^
   --exclude-module=_pytest ^
   --hidden-import unittest ^
-  --name="MyApplication" ^
+  --name="TextReplacerPAAK" ^
   main.py
 
 echo.

@@ -1,5 +1,6 @@
 import sys
 import logging # logging 추가
+import os # <<< os 임포트 추가
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, 
@@ -14,6 +15,18 @@ from typing import TYPE_CHECKING, Dict
 if TYPE_CHECKING:
     from keyboard_listener import KeyboardListener 
     from config_manager import ConfigManager
+
+# +++ resource_path 함수 추가 시작 +++
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".") # 개발 환경에서는 현재 작업 디렉토리
+
+    return os.path.join(base_path, relative_path)
+# +++ resource_path 함수 추가 끝 +++
 
 class TextReplacerSettingsWindow(QMainWindow):
     """텍스트 치환 설정 GUI 메인 윈도우 클래스"""
@@ -30,11 +43,10 @@ class TextReplacerSettingsWindow(QMainWindow):
         self.resize(800, 600) # 초기 창 크기 설정 (가로 800, 세로 600)
 
         # --- 아이콘 설정 --- 
-        # TODO: 'icon.png' 또는 'icon.ico' 파일을 프로젝트에 추가하고 경로 지정
-        icon_path = "assets/icon.ico"  # 아이콘 파일 경로 (없으면 아래 표준 아이콘 사용)
+        icon_path = resource_path("assets/icon.ico")  # <<< resource_path 사용
         if os.path.exists(icon_path):
              self.app_icon = QIcon(icon_path)
-        elif QIcon.hasThemeIcon("document-edit"):
+        elif QIcon.hasThemeIcon("document-edit"): # 테마 아이콘은 개발 시에만 유용할 수 있음
             self.app_icon = QIcon.fromTheme("document-edit") # 테마 아이콘 시도
         else:
             # 표준 아이콘 사용 (예: SP_DesktopIcon)
