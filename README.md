@@ -15,7 +15,7 @@ A productivity tool that automatically replaces user-defined keywords with speci
 ## Key Features 🌟
 
 *   **Easy Keyword-Replacement Phrase Setup**: Intuitively add, modify, and delete keywords and their replacement phrases as needed through a user-friendly GUI.
-*   **Real-time Background Detection**: When you type a keyword in any program and press the spacebar or Enter key, it is instantly replaced with the corresponding phrase.
+*   **Real-time Background Detection**: When you type a keyword in any program and press the spacebar, it is instantly replaced with the corresponding phrase.
 *   **System Tray Integration**: Minimize the program to the system tray icon to keep it running in the background without closing it.
 *   **Automatic Settings Save & Load**: User-defined rules are automatically saved to a file and retained even after restarting the program. (`%LOCALAPPDATA%/TextReplacerPAAK/rules.json`)
 *   **Startup Program Registration Option**: Provides an option to automatically run the program when Windows starts.
