@@ -21,7 +21,7 @@ class KeyboardListener:
         self.max_buffer_size = self._calculate_max_buffer_size() # 가장 긴 키워드 길이 + 여유분
 
         # 치환 트리거 키 설정 (pynput Key 객체 사용)
-        self.trigger_keys = {keyboard.Key.space, keyboard.Key.enter}
+        self.trigger_keys = {keyboard.Key.space} # 엔터키 제거하고 스페이스바만 유지
 
         # 키 입력 제어를 위한 Controller 인스턴스 생성
         self.controller = Controller()
